@@ -37,6 +37,11 @@ const HOST_CHROME_FAILURE_PATTERNS =
 // assemble pipeline so no `output/` baseline is required.
 const ADAPTERS = ["gsap", "anime", "three", "lottie", "css", "waapi"] as const;
 
+// Every adapter fixture is a 2-second composition at 30fps. Pin the absolute
+// count so a regression that produces fewer frames in both runs (e.g. a
+// probe stage that reads duration as 0s) doesn't pass vacuously.
+const EXPECTED_FRAME_COUNT = 60;
+
 let runRoot: string;
 let testsDistributedDir: string;
 
@@ -122,30 +127,30 @@ describe("per-adapter chunk-boundary byte equality", () => {
         mkdirSync(workOne, { recursive: true });
         mkdirSync(workFour, { recursive: true });
 
-        let outOne: string;
-        try {
-          outOne = await planAndAssemble({
-            projectDir,
-            workDir: workOne,
-            chunkSize: 60,
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          if (HOST_CHROME_FAILURE_PATTERNS.test(message)) {
-            console.warn(
-              `[chunkBoundary.test] skipping ${adapter} — host Chrome can't render. ` +
-                "Docker harness covers the contract. Diagnostic:",
-              message.slice(0, 240),
-            );
-            return;
+        // Soft-skip when host Chrome can't render. Wrap *both* renders —
+        // cold-Chrome / SwiftShader flakes happen on the second render
+        // as readily as the first, and a hard-fail on the N=4 path would
+        // diverge from the rest of the harness's soft-skip convention.
+        const runRender = async (workDir: string, chunkSize: number): Promise<string | null> => {
+          try {
+            return await planAndAssemble({ projectDir, workDir, chunkSize });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (HOST_CHROME_FAILURE_PATTERNS.test(message)) {
+              console.warn(
+                `[chunkBoundary.test] skipping ${adapter} — host Chrome can't render. ` +
+                  "Docker harness covers the contract. Diagnostic:",
+                message.slice(0, 240),
+              );
+              return null;
+            }
+            throw err;
           }
-          throw err;
-        }
-        const outFour = await planAndAssemble({
-          projectDir,
-          workDir: workFour,
-          chunkSize: 15,
-        });
+        };
+        const outOne = await runRender(workOne, 60);
+        if (outOne === null) return;
+        const outFour = await runRender(workFour, 15);
+        if (outFour === null) return;
 
         // Per-frame byte equality across the two frames directories. A
         // boundary regression in the adapter's seek-determinism would
@@ -157,7 +162,12 @@ describe("per-adapter chunk-boundary byte equality", () => {
         const framesFour = readdirSync(outFour)
           .filter((n) => n.toLowerCase().endsWith(".png"))
           .sort();
-        expect(framesOne.length).toBe(framesFour.length);
+        // Pin the absolute count, not just equality between the two runs.
+        // Otherwise a regression that truncates BOTH renders identically
+        // (e.g. a probe stage that misreads duration as 0s) would pass
+        // vacuously — `0 === 0` is true.
+        expect(framesOne.length).toBe(EXPECTED_FRAME_COUNT);
+        expect(framesFour.length).toBe(EXPECTED_FRAME_COUNT);
         expect(framesOne).toEqual(framesFour);
         for (let i = 0; i < framesOne.length; i++) {
           const frameName = framesOne[i];

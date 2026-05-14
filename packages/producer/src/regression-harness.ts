@@ -722,12 +722,19 @@ async function runTestSuite(
   // png-sequence output is a directory (basename = "frames"); encoded video
   // formats produce a single file (basename = "output.<ext>"). One lookup
   // covers both shapes for the in-temp render and the on-disk baseline.
+  // `VIDEO_EXT` is intentionally typed against only the encoded-video set —
+  // the `isPngSequence` ternary below short-circuits before `outputFormat`
+  // can be `"png-sequence"`, but TS can't narrow through that, so we
+  // assert the narrowing at the indexing site rather than over-widening
+  // the lookup table.
   const VIDEO_EXT: Record<"mp4" | "mov" | "webm", string> = {
     mp4: ".mp4",
     mov: ".mov",
     webm: ".webm",
   };
-  const outputBasename = isPngSequence ? "frames" : `output${VIDEO_EXT[outputFormat]}`;
+  const outputBasename = isPngSequence
+    ? "frames"
+    : `output${VIDEO_EXT[outputFormat as "mp4" | "mov" | "webm"]}`;
   const renderedOutputPath = join(tempRoot, outputBasename);
 
   // Snapshot files stored in test's output/ directory. For png-sequence the
