@@ -898,4 +898,45 @@ describe("bundleToSingleHtml", () => {
 
     expect(bundled).toContain("url('styles/sprite.png?v=2#section')");
   });
+
+  it("deduplicates diamond @import (same file imported by two parents)", async () => {
+    const dir = makeTempProject({
+      "index.html": `<!doctype html>
+<html><body>
+  <link rel="stylesheet" href="styles/main.css">
+  <div data-composition-id="root" data-width="320" data-height="180"></div>
+  <script>window.__timelines = window.__timelines || {}; window.__timelines.root = {}</script>
+</body></html>`,
+      "styles/main.css": `@import url('./a.css');\n@import url('./b.css');`,
+      "styles/a.css": `@import url('./shared.css');\n.a { color: red; }`,
+      "styles/b.css": `@import url('./shared.css');\n.b { color: blue; }`,
+      "styles/shared.css": `:root { --shared: 1; }`,
+    });
+
+    const bundled = await bundleToSingleHtml(dir);
+
+    const sharedCount = (bundled.match(/--shared: 1/g) || []).length;
+    expect(sharedCount).toBe(1);
+    expect(bundled).toContain(".a { color: red; }");
+    expect(bundled).toContain(".b { color: blue; }");
+    expect(bundled).not.toContain("@import");
+  });
+
+  it("does not resolve @import inside CSS comments", async () => {
+    const dir = makeTempProject({
+      "index.html": `<!doctype html>
+<html><body>
+  <link rel="stylesheet" href="app.css">
+  <div data-composition-id="root" data-width="320" data-height="180"></div>
+  <script>window.__timelines = window.__timelines || {}; window.__timelines.root = {}</script>
+</body></html>`,
+      "app.css": `/* @import url('./old.css'); */\nbody { margin: 0; }`,
+      "old.css": `.old { display: none; }`,
+    });
+
+    const bundled = await bundleToSingleHtml(dir);
+
+    expect(bundled).toContain("/* @import url('./old.css'); */");
+    expect(bundled).not.toContain(".old { display: none; }");
+  });
 });

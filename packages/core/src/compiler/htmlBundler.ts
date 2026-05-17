@@ -92,6 +92,29 @@ const CSS_IMPORT_RE =
 
 const REBASE_URL_RE = /\burl\(\s*(["']?)([^)"']+)\1\s*\)/g;
 
+const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
+
+function withCommentsStripped<T>(
+  css: string,
+  fn: (stripped: string) => T,
+): { result: T; restore: (s: string) => string } {
+  const comments: string[] = [];
+  const stripped = css.replace(CSS_COMMENT_RE, (m) => {
+    const idx = comments.length;
+    comments.push(m);
+    return `/*__hf_c${idx}__*/`;
+  });
+  const result = fn(stripped);
+  const restore = (s: string) => {
+    let out = s;
+    for (let i = 0; i < comments.length; i++) {
+      out = out.replace(`/*__hf_c${i}__*/`, comments[i]!);
+    }
+    return out;
+  };
+  return { result, restore };
+}
+
 function rebaseCssUrls(css: string, cssFileDir: string, projectDir: string): string {
   const resolvedRoot = resolve(projectDir);
   const resolvedDir = resolve(cssFileDir);
@@ -101,7 +124,7 @@ function rebaseCssUrls(css: string, cssFileDir: string, projectDir: string): str
     const { basePath, suffix } = splitUrlSuffix(urlValue.trim());
     if (!basePath) return full;
     const absolutePath = resolve(resolvedDir, basePath);
-    const rebased = relative(resolvedRoot, absolutePath);
+    const rebased = relative(resolvedRoot, absolutePath).split(sep).join("/");
     if (rebased === basePath) return full;
     return `url(${quote || ""}${rebased}${suffix}${quote || ""})`;
   });
@@ -113,29 +136,32 @@ function inlineCssFile(
   projectDir: string,
   visited: Set<string> = new Set(),
 ): string {
-  const placeholders: string[] = [];
-  const withPlaceholders = css.replace(
+  const { result: strippedCss, restore: restoreComments } = withCommentsStripped(css, (s) => s);
+  const importPlaceholders: string[] = [];
+  const withPlaceholders = strippedCss.replace(
     CSS_IMPORT_RE,
     (full, _q1, urlPath, _q2, barePath, mediaQuery) => {
       const importPath = urlPath ?? barePath;
       if (!importPath || !isRelativeUrl(importPath)) return full;
       const resolved = resolve(cssFileDir, importPath);
       const normalizedBase = resolve(projectDir) + sep;
-      if (!resolved.startsWith(normalizedBase) || visited.has(resolved)) return full;
+      if (!resolved.startsWith(normalizedBase)) return full;
+      if (visited.has(resolved)) return "";
       const content = safeReadFile(resolved);
       if (content == null) return full;
       visited.add(resolved);
       const inlined = inlineCssFile(content, dirname(resolved), projectDir, visited);
       const trimmedMedia = (mediaQuery || "").trim();
       const block = trimmedMedia ? `@media ${trimmedMedia} {\n${inlined}\n}\n` : inlined + "\n";
-      const idx = placeholders.length;
-      placeholders.push(block);
+      const idx = importPlaceholders.length;
+      importPlaceholders.push(block);
       return `/*__hf_import_${idx}__*/`;
     },
   );
   let rebased = rebaseCssUrls(withPlaceholders, cssFileDir, projectDir);
-  for (let i = 0; i < placeholders.length; i++) {
-    rebased = rebased.replace(`/*__hf_import_${i}__*/`, placeholders[i]!);
+  rebased = restoreComments(rebased);
+  for (let i = 0; i < importPlaceholders.length; i++) {
+    rebased = rebased.replace(`/*__hf_import_${i}__*/`, importPlaceholders[i]!);
   }
   return rebased;
 }
