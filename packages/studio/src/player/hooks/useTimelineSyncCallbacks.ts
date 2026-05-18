@@ -163,11 +163,12 @@ export function useTimelineSyncCallbacks({
     // with the initial adapter seek on iframe load.
     liveTime.notify(startTime);
     const adapterDur = adapter.getDuration();
+    const storeDur = usePlayerStore.getState().duration;
     if (
       Number.isFinite(adapterDur) &&
       adapterDur > 0 &&
       adapterDur < 7200 &&
-      adapterDur !== usePlayerStore.getState().duration
+      adapterDur > storeDur
     ) {
       setDuration(adapterDur);
     }

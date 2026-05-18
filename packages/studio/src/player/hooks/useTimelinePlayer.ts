@@ -99,7 +99,7 @@ export function useTimelinePlayer() {
       if (
         Number.isFinite(nextDuration) &&
         (nextDuration ?? 0) > 0 &&
-        nextDuration !== state.duration
+        (nextDuration ?? 0) > state.duration
       ) {
         setDuration(nextDuration ?? 0);
       }

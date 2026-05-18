@@ -84,6 +84,10 @@ export function StudioApp() {
         : 0;
     return Math.max(timelineDuration, maxEnd);
   }, [timelineDuration, timelineElements]);
+  useEffect(() => {
+    if (effectiveTimelineDuration !== usePlayerStore.getState().duration)
+      usePlayerStore.getState().setDuration(effectiveTimelineDuration);
+  }, [effectiveTimelineDuration]);
   const refreshPreviewDocumentVersion = useCallback(() => {
     setPreviewDocumentVersion((v) => v + 1);
     window.setTimeout(() => setPreviewDocumentVersion((v) => v + 1), 80);
@@ -235,11 +239,9 @@ export function StudioApp() {
     openSourceForSelection: fileManager.openSourceForSelection,
     selectSidebarTab: (tab: SidebarTab) => leftSidebarRef.current?.selectTab(tab),
   });
-
   domEditSelectionBridgeRef.current = domEditSession.domEditSelection;
   clearDomSelectionRef.current = domEditSession.clearDomSelection;
   handleDomEditElementDeleteRef.current = domEditSession.handleDomEditElementDelete;
-
   useCaptionDetection({
     projectId,
     activeCompPath,
@@ -271,10 +273,8 @@ export function StudioApp() {
     setConsoleErrors,
     resetErrors: resetConsoleErrors,
   } = useConsoleErrorCapture(previewIframe);
-
   const [globalDragOver, setGlobalDragOver] = useState(false);
   const dragCounterRef = useRef(0);
-
   const { syncPreviewTimelineHotkey, syncPreviewHistoryHotkey } = appHotkeys;
   const handlePreviewIframeRef = useCallback(
     (iframe: HTMLIFrameElement | null) => {
