@@ -146,4 +146,41 @@ describe("patchElementInHtml", () => {
 
     expect(result).toMatch(/padding:\s*16px/);
   });
+
+  it("rejects event handler attributes", () => {
+    const result = patchElementInHtml(FIXTURE, { id: "hero" }, [
+      { type: "html-attribute", property: "onload", value: "fetch('/evil')" },
+    ]);
+
+    expect(result).not.toContain("onload");
+    expect(result).not.toContain("fetch");
+  });
+
+  it("rejects javascript: URLs in src", () => {
+    const result = patchElementInHtml(FIXTURE, { id: "hero" }, [
+      { type: "html-attribute", property: "src", value: "javascript:alert(1)" },
+    ]);
+
+    expect(result).not.toContain("javascript:");
+  });
+
+  it("allows aria-* and data-* attributes", () => {
+    const result = patchElementInHtml(FIXTURE, { id: "hero" }, [
+      { type: "html-attribute", property: "aria-label", value: "greeting" },
+      { type: "html-attribute", property: "data-custom", value: "test" },
+    ]);
+
+    expect(result).toContain('aria-label="greeting"');
+    expect(result).toContain('data-custom="test"');
+  });
+
+  it("rejects srcdoc and formaction attributes", () => {
+    const result = patchElementInHtml(FIXTURE, { id: "hero" }, [
+      { type: "html-attribute", property: "srcdoc", value: "<script>alert(1)</script>" },
+      { type: "html-attribute", property: "formaction", value: "javascript:void(0)" },
+    ]);
+
+    expect(result).not.toContain("srcdoc");
+    expect(result).not.toContain("formaction");
+  });
 });

@@ -66,6 +66,53 @@ export interface PatchOperation {
   value: string | null;
 }
 
+const ALLOWED_HTML_ATTRS = new Set([
+  "id",
+  "class",
+  "style",
+  "title",
+  "lang",
+  "dir",
+  "hidden",
+  "tabindex",
+  "role",
+  "slot",
+  "translate",
+  "draggable",
+  "contenteditable",
+  "width",
+  "height",
+  "src",
+  "alt",
+  "loading",
+  "decoding",
+  "crossorigin",
+  "preload",
+  "autoplay",
+  "loop",
+  "muted",
+  "controls",
+  "poster",
+  "playsinline",
+]);
+
+function isAllowedHtmlAttribute(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (ALLOWED_HTML_ATTRS.has(lower)) return true;
+  if (lower.startsWith("data-")) return true;
+  if (lower.startsWith("aria-")) return true;
+  return false;
+}
+
+function isSafeAttributeValue(name: string, value: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower === "src" || lower === "href" || lower === "action" || lower === "formaction") {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed.startsWith("javascript:") || trimmed.startsWith("vbscript:")) return false;
+  }
+  return true;
+}
+
 export function patchElementInHtml(
   source: string,
   target: SourceMutationTarget,
@@ -93,7 +140,9 @@ export function patchElementInHtml(
         }
         break;
       case "html-attribute":
+        if (!isAllowedHtmlAttribute(op.property)) break;
         if (op.value != null) {
+          if (!isSafeAttributeValue(op.property, op.value)) break;
           htmlEl.setAttribute(op.property, op.value);
         } else {
           htmlEl.removeAttribute(op.property);
