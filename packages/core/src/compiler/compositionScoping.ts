@@ -383,8 +383,7 @@ export function wrapScopedCompositionScript(
     ? new Proxy(window, {
         get: function(target, prop, receiver) {
           if (prop === "__timelines") return __hfGetTimelineRegistry();
-          var value = Reflect.get(target, prop, target);
-          return typeof value === "function" ? value.bind(target) : value;
+          return Reflect.get(target, prop, target);
         },
         set: function(target, prop, value, receiver) {
           if (prop === "__timelines") {

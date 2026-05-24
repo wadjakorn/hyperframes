@@ -146,6 +146,28 @@ body { margin: 0; }
     expect(variablesByComp["card-1"]).toEqual({ title: "Pro" });
   });
 
+  it("preserves static methods on classes exposed through window", () => {
+    const { document } = parseHTML(`<div data-composition-id="scene"></div>`);
+    class FakeTexts {
+      static mountChars() {
+        return "ok";
+      }
+    }
+    const fakeWindow: Record<string, unknown> = {
+      document,
+      __timelines: {},
+      Texts: FakeTexts,
+    };
+    const wrapped = wrapScopedCompositionScript(
+      `window.__capturedMountCharsType = typeof window.Texts?.mountChars;`,
+      "scene",
+    );
+
+    new Function("window", wrapped)(fakeWindow);
+
+    expect(fakeWindow.__capturedMountCharsType).toBe("function");
+  });
+
   it("executes document and GSAP selectors inside the composition root", () => {
     const { document } = parseHTML(`
       <div data-composition-id="scene" data-start="intro"><h1 class="title">Scene</h1></div>
