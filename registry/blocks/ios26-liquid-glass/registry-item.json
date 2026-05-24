@@ -152,6 +152,11 @@
       "type": "hyperframes:asset"
     },
     {
+      "path": "assets/icons/whatsapp.jpg",
+      "target": "assets/icons/whatsapp.jpg",
+      "type": "hyperframes:asset"
+    },
+    {
       "path": "assets/icons/notify-messages.jpg",
       "target": "assets/icons/notify-messages.jpg",
       "type": "hyperframes:asset"

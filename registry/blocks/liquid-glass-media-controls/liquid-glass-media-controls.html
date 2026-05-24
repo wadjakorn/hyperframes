@@ -46,19 +46,19 @@
       /* ── Glass Panels ── */
       .glass-panel {
         position: absolute;
-        background: rgba(255, 255, 255, 0.06);
-        --lg-blur: 0.22;
-        --lg-refraction: 0.6;
+        background: rgba(255, 255, 255, 0.055);
+        --lg-blur: 0.42;
+        --lg-refraction: 0.92;
         --lg-corner-radius: 36;
-        --lg-z-radius: 38;
-        --lg-specular: 0.2;
-        --lg-fresnel: 0.9;
-        --lg-edge-highlight: 0.1;
-        --lg-chrom-aberration: 0.05;
-        --lg-shadow-opacity: 0.35;
-        --lg-shadow-spread: 14;
-        --lg-shadow-offset-y: 4;
-        --lg-saturation: 0.25;
+        --lg-z-radius: 58;
+        --lg-specular: 0.46;
+        --lg-fresnel: 1.15;
+        --lg-edge-highlight: 0.34;
+        --lg-chrom-aberration: 0.08;
+        --lg-shadow-opacity: 0;
+        --lg-shadow-spread: 0;
+        --lg-shadow-offset-y: 0;
+        --lg-saturation: 1.1;
       }
       .search-panel {
         width: 640px;
@@ -113,9 +113,9 @@
         align-items: center;
         gap: 16px;
         padding: 0 28px;
-        background: #02040a;
+        background: transparent;
         border-radius: 24px;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        box-shadow: none;
       }
       .search-text svg {
         width: 22px;
@@ -131,6 +131,7 @@
         font-size: 19px;
         font-weight: 650;
         color: #fff;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
       }
       .search-caret {
         width: 2px;
@@ -154,9 +155,9 @@
         gap: 0;
         position: relative;
         padding: 6px;
-        background: rgba(5, 10, 20, 0.52);
+        background: transparent;
         border-radius: 44px;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        box-shadow: none;
       }
       .toggle-active-pill {
         position: absolute;
@@ -166,8 +167,12 @@
         width: 209px;
         height: 52px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.16);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+        background:
+          radial-gradient(circle at 28% 18%, rgba(255, 255, 255, 0.32), transparent 42%),
+          rgba(255, 255, 255, 0.14);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.32),
+          inset 0 -1px 0 rgba(255, 255, 255, 0.09);
       }
       .toggle-item {
         flex: 1;
@@ -178,6 +183,7 @@
         font-weight: 700;
         color: rgba(255, 255, 255, 0.96);
         line-height: 52px;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
       }
       .toggle-item.active {
         color: #fff;
@@ -195,9 +201,9 @@
         align-items: center;
         gap: 22px;
         padding: 0 24px;
-        background: rgba(5, 10, 20, 0.56);
+        background: transparent;
         border-radius: 44px;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        box-shadow: none;
       }
       .album-art {
         position: relative;
@@ -237,11 +243,13 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
       }
       .media-artist {
         font-size: 16px;
         font-weight: 600;
         color: rgba(255, 255, 255, 0.84);
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
       }
       .media-meta-row {
         display: flex;
@@ -297,9 +305,9 @@
         align-items: center;
         gap: 18px;
         padding: 0 28px;
-        background: rgba(5, 10, 20, 0.56);
+        background: transparent;
         border-radius: 28px;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        box-shadow: none;
       }
       .slider-text svg {
         width: 26px;
@@ -314,7 +322,7 @@
       .slider-track {
         flex: 1;
         height: 8px;
-        background: rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.24);
         border-radius: 4px;
         position: relative;
       }
@@ -335,6 +343,7 @@
         font-variant-numeric: tabular-nums;
         width: 42px;
         text-align: right;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
       }
       #text-slider {
         top: 616px;

@@ -46,25 +46,71 @@
       /* ── Glass Panel ── */
       .menu-panel {
         position: absolute;
-        width: 360px;
-        height: 500px;
-        background: rgba(255, 255, 255, 0.06);
-        --lg-blur: 0.22;
-        --lg-refraction: 0.6;
-        --lg-corner-radius: 16;
-        --lg-z-radius: 38;
-        --lg-specular: 0.2;
-        --lg-fresnel: 0.9;
-        --lg-edge-highlight: 0.1;
-        --lg-chrom-aberration: 0.05;
-        --lg-shadow-opacity: 0.35;
-        --lg-shadow-spread: 14;
-        --lg-shadow-offset-y: 4;
-        --lg-saturation: 0.25;
+        width: 390px;
+        height: 506px;
+        background: rgba(255, 255, 255, 0.15);
+        --lg-blur: 0.56;
+        --lg-refraction: 0.52;
+        --lg-corner-radius: 30;
+        --lg-z-radius: 48;
+        --lg-specular: 0.26;
+        --lg-fresnel: 1;
+        --lg-edge-highlight: 0.2;
+        --lg-chrom-aberration: 0.035;
+        --lg-tint: 0.88;
+        --lg-brightness: 0.54;
+        --lg-shadow-opacity: 0;
+        --lg-shadow-spread: 0;
+        --lg-shadow-offset-y: 0;
+        --lg-saturation: -0.24;
       }
       #glass-menu {
         top: 270px;
         left: 1980px;
+      }
+      .file-panel {
+        position: absolute;
+        top: 372px;
+        left: 500px;
+        width: 360px;
+        height: 104px;
+        background: rgba(255, 255, 255, 0.11);
+        --lg-blur: 0.52;
+        --lg-refraction: 0.48;
+        --lg-corner-radius: 28;
+        --lg-z-radius: 36;
+        --lg-specular: 0.28;
+        --lg-fresnel: 0.94;
+        --lg-edge-highlight: 0.18;
+        --lg-chrom-aberration: 0.03;
+        --lg-tint: 0.74;
+        --lg-brightness: 0.34;
+        --lg-shadow-opacity: 0;
+        --lg-shadow-spread: 0;
+        --lg-shadow-offset-y: 0;
+        --lg-saturation: -0.18;
+      }
+      .submenu-panel {
+        position: absolute;
+        top: 456px;
+        left: 1980px;
+        width: 230px;
+        height: 58px;
+        background: rgba(255, 255, 255, 0.11);
+        --lg-blur: 0.52;
+        --lg-refraction: 0.5;
+        --lg-corner-radius: 20;
+        --lg-z-radius: 28;
+        --lg-specular: 0.3;
+        --lg-fresnel: 0.96;
+        --lg-edge-highlight: 0.18;
+        --lg-chrom-aberration: 0.03;
+        --lg-tint: 0.74;
+        --lg-brightness: 0.36;
+        --lg-shadow-opacity: 0;
+        --lg-shadow-spread: 0;
+        --lg-shadow-offset-y: 0;
+        --lg-saturation: -0.2;
       }
 
       /* ── Text Overlay ── */
@@ -85,10 +131,13 @@
         gap: 18px;
         padding: 18px 22px;
         border-radius: 26px;
-        background: #02040a;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.22),
-          0 24px 70px rgba(0, 0, 0, 0.28);
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.095) 0%,
+          rgba(255, 255, 255, 0.036) 38%,
+          rgba(255, 255, 255, 0.006) 100%
+        );
+        box-shadow: none;
       }
       .file-icon {
         width: 58px;
@@ -106,15 +155,21 @@
         gap: 4px;
       }
       .file-title {
-        color: #fff;
+        color: rgba(5, 17, 28, 0.9);
         font-size: 21px;
         font-weight: 780;
         letter-spacing: 0;
+        text-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.24),
+          0 10px 20px rgba(255, 255, 255, 0.14);
       }
       .file-subtitle {
-        color: #fff;
+        color: rgba(5, 17, 28, 0.72);
         font-size: 15px;
         font-weight: 650;
+        text-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.2),
+          0 8px 18px rgba(255, 255, 255, 0.12);
       }
       .pointer {
         position: absolute;
@@ -140,14 +195,14 @@
         opacity: 0;
       }
       .menu-text {
-        width: 360px;
-        height: 500px;
+        width: 390px;
+        height: 506px;
         display: flex;
         flex-direction: column;
-        padding: 16px 0;
-        background: #02040a;
-        border-radius: 16px;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+        padding: 18px 0;
+        background: transparent;
+        border-radius: 30px;
+        box-shadow: none;
         overflow: hidden;
       }
       #text-menu {
@@ -158,15 +213,17 @@
       .menu-highlight {
         position: absolute;
         top: 17px;
-        left: 12px;
+        left: 14px;
         z-index: 0;
-        width: 336px;
+        width: 362px;
         height: 52px;
-        border-radius: 12px;
+        border-radius: 17px;
         background:
-          linear-gradient(90deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
-          rgba(255, 255, 255, 0.1);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+          radial-gradient(circle at 24% 22%, rgba(255, 255, 255, 0.48), transparent 42%),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.29), rgba(255, 255, 255, 0.12));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.38),
+          inset 0 -1px 0 rgba(255, 255, 255, 0.1);
         opacity: 0;
       }
       .menu-item {
@@ -175,18 +232,18 @@
         display: flex;
         align-items: center;
         gap: 16px;
-        padding: 14px 24px;
+        padding: 14px 28px;
         font-size: 18px;
         font-weight: 650;
-        color: #fff;
+        color: rgb(0, 7, 14);
         cursor: default;
-        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.26);
       }
       .menu-item svg {
         width: 22px;
         height: 22px;
         flex-shrink: 0;
-        stroke: rgba(255, 255, 255, 0.9);
+        stroke: rgb(0, 7, 14);
         fill: none;
         stroke-width: 2;
         stroke-linecap: round;
@@ -194,8 +251,8 @@
       }
       .menu-sep {
         height: 1px;
-        margin: 10px 24px;
-        background: rgba(255, 255, 255, 0.2);
+        margin: 10px 28px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.24), transparent);
       }
       .menu-footer {
         position: relative;
@@ -213,13 +270,13 @@
         gap: 4px;
         font-size: 13px;
         font-weight: 650;
-        color: #fff;
-        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+        color: rgba(0, 7, 14, 0.9);
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.24);
       }
       .menu-footer-item svg {
         width: 24px;
         height: 24px;
-        stroke: #fff;
+        stroke: rgba(0, 7, 14, 0.84);
         fill: none;
         stroke-width: 2;
         stroke-linecap: round;
@@ -229,7 +286,7 @@
         margin-left: auto;
         font-size: 14px;
         font-weight: 650;
-        color: #fff;
+        color: rgba(0, 7, 14, 0.82);
         font-variant-numeric: tabular-nums;
       }
       .submenu-preview {
@@ -237,17 +294,15 @@
         top: 456px;
         left: 1980px;
         z-index: 2;
-        width: 210px;
-        height: 54px;
+        width: 230px;
+        height: 58px;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 18px;
-        background: #02040a;
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.24),
-          0 18px 42px rgba(0, 0, 0, 0.28);
-        color: #fff;
+        border-radius: 20px;
+        background: transparent;
+        box-shadow: none;
+        color: rgba(0, 7, 14, 0.92);
         font-size: 15px;
         font-weight: 760;
         opacity: 0;
@@ -267,7 +322,9 @@
       <canvas id="three-canvas" width="1920" height="1080"></canvas>
 
       <canvas id="glass-canvas" layoutsubtree width="1920" height="1080">
+        <div id="glass-file" class="file-panel liquid-glass"></div>
         <div id="glass-menu" class="menu-panel liquid-glass"></div>
+        <div id="glass-submenu" class="submenu-panel liquid-glass"></div>
       </canvas>
 
       <div id="context-file" class="context-file">
@@ -472,50 +529,80 @@
       var tl = gsap.timeline({ paused: true });
 
       var gm = document.getElementById("glass-menu");
+      var gf = document.getElementById("glass-file");
+      var gsm = document.getElementById("glass-submenu");
       var tm = document.getElementById("text-menu");
       var pointer = document.getElementById("pointer");
       var fileCard = document.getElementById("context-file");
 
-      gsap.set([gm, tm], { left: 1980, top: 270, opacity: 1 });
-      gsap.set(".menu-item", { x: -8, opacity: 1 });
+      gsap.set([gm, tm], {
+        left: 860,
+        top: 270,
+        opacity: 0,
+        scale: 0.82,
+        y: -8,
+        transformOrigin: "0% 18%",
+      });
+      gsap.set([gf, fileCard], { top: 372, opacity: 1, scale: 1, transformOrigin: "78% 54%" });
+      gsap.set([gsm, "#submenu-preview"], {
+        left: 1980,
+        opacity: 0,
+        scale: 0.86,
+        x: -12,
+        transformOrigin: "0% 50%",
+      });
+      gsap.set(".menu-item", { y: -4, opacity: 0 });
       gsap.set("#menu-highlight", { top: 17, opacity: 0 });
-      gsap.set("#submenu-preview", { left: 1980, opacity: 1 });
-      gsap.set(fileCard, { top: 372 });
 
-      tl.to(fileCard, { top: 340, duration: 0.38, ease: "power3.out" }, 0.1);
+      tl.to([gf, fileCard], { top: 340, duration: 0.38, ease: "power3.out" }, 0.1);
       tl.fromTo(
         pointer,
         { left: 620, top: 520 },
         { left: 778, top: 395, duration: 0.55, ease: "power3.out" },
         0.35,
       );
-      tl.to("#click-ring", { opacity: 0.7, scale: 1.2, duration: 0.16, ease: "power2.out" }, 0.86);
+      tl.set("#click-ring", { left: 756, top: 372, scale: 0.72 }, 0.84);
+      tl.to("#click-ring", { opacity: 0.7, scale: 1.18, duration: 0.16, ease: "power2.out" }, 0.86);
       tl.to("#click-ring", { opacity: 0, scale: 1.8, duration: 0.28, ease: "power2.out" }, 1.02);
       tl.to(
-        fileCard,
+        [gf, fileCard],
         { scale: 0.985, duration: 0.08, ease: "power2.out", yoyo: true, repeat: 1 },
         0.86,
       );
 
-      tl.to([gm, tm], { left: 860, top: 270, duration: 0.24, ease: "power3.out" }, 1.0);
-      tl.to(".menu-item", { x: 0, duration: 0.22, ease: "power2.out", stagger: 0.035 }, 1.08);
+      tl.to([gm, tm], { opacity: 1, scale: 1, y: 0, duration: 0.36, ease: "back.out(1.08)" }, 0.98);
+      tl.to(
+        ".menu-item",
+        { y: 0, opacity: 1, duration: 0.24, ease: "power3.out", stagger: 0.026 },
+        1.07,
+      );
 
       tl.to("#menu-highlight", { opacity: 1, duration: 0.12, ease: "none" }, 1.35);
       tl.to("#menu-highlight", { top: 69, duration: 0.22, ease: "power2.out" }, 2.0);
-      tl.to("#menu-highlight", { top: 227, duration: 0.2, ease: "power2.out" }, 2.85);
-      tl.to("#menu-highlight", { top: 279, duration: 0.2, ease: "power2.out" }, 3.52);
-      tl.to("#submenu-preview", { left: 1236, duration: 0.22, ease: "power2.out" }, 3.62);
-      tl.to(pointer, { left: 1175, top: 472, duration: 0.42, ease: "power3.out" }, 3.7);
+      tl.to(pointer, { left: 1128, top: 468, duration: 0.46, ease: "power3.inOut" }, 2.48);
+      tl.to("#menu-highlight", { top: 187, duration: 0.22, ease: "power2.out" }, 2.58);
+      tl.set([gsm, "#submenu-preview"], { left: 1236 }, 3.04);
+      tl.fromTo(
+        [gsm, "#submenu-preview"],
+        { scale: 0.86, opacity: 0, x: -12 },
+        { scale: 1, opacity: 1, x: 0, duration: 0.24, ease: "back.out(1.04)" },
+        3.08,
+      );
+      tl.to(pointer, { left: 1318, top: 484, duration: 0.5, ease: "power3.inOut" }, 3.32);
+      tl.set("#click-ring", { left: 1295, top: 461, scale: 0.72 }, 3.86);
       tl.to(
-        "#submenu-preview",
+        "#click-ring",
+        { opacity: 0.72, scale: 1.08, duration: 0.12, ease: "power2.out" },
+        3.88,
+      );
+      tl.to("#click-ring", { opacity: 0, scale: 1.58, duration: 0.24, ease: "power2.out" }, 4.0);
+      tl.to(
+        [gsm, "#submenu-preview"],
         { scale: 0.965, duration: 0.09, ease: "power2.out", yoyo: true, repeat: 1 },
-        4.28,
+        3.92,
       );
 
-      tl.to("#submenu-preview", { left: 1980, duration: 0.18, ease: "power2.in" }, 6.34);
-      tl.to([gm, tm], { left: 1980, top: 286, duration: 0.24, ease: "power2.in" }, 6.52);
-      tl.to(pointer, { left: 1360, top: 590, opacity: 0, duration: 0.35, ease: "power2.in" }, 6.55);
-      tl.to(fileCard, { top: -160, duration: 0.28, ease: "power2.in" }, 6.72);
+      tl.to(pointer, { opacity: 0, duration: 0.35, ease: "power2.out" }, 5.85);
 
       /* Duration driver */
       tl.to({ v: 0 }, { v: 1, duration: DURATION, ease: "none" }, 0);

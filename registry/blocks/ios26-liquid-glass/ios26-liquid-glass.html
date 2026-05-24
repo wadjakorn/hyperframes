@@ -325,6 +325,13 @@
       .ios-notification-gmail {
         background-image: url("assets/icons/gmail.jpg");
       }
+      .ios-icon-preload {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
       .ios-notification-copy {
         min-width: 0;
         flex: 1;
@@ -379,8 +386,8 @@
       .ios-dock-brave {
         background-image: url("assets/icons/brave.jpg");
       }
-      .ios-dock-messages {
-        background-image: url("assets/icons/messages.jpg");
+      .ios-dock-whatsapp {
+        background-image: url("assets/icons/whatsapp.jpg");
       }
       .ios-dock-music {
         background-image: url("assets/icons/music.jpg");
@@ -427,6 +434,12 @@
             <div id="phone-title" style="display: none"></div>
             <span id="phone-count" style="display: none"></span>
             <div id="phone-cards" style="display: none"></div>
+            <img
+              id="ios-notify-messages-preload"
+              class="ios-icon-preload"
+              src="assets/icons/notify-messages.jpg"
+              alt=""
+            />
             <div class="ios-wallpaper"></div>
             <div class="ios-status">
               <div class="ios-status-left">
@@ -534,9 +547,9 @@
                 <div class="ios-app-label">Brave</div>
               </div>
               <div class="ios-app">
-                <img class="ios-app-icon" src="assets/icons/messages.jpg" alt="" />
+                <img class="ios-app-icon" src="assets/icons/whatsapp.jpg" alt="" />
                 <span class="ios-badge">282</span>
-                <div class="ios-app-label">Messages</div>
+                <div class="ios-app-label">WhatsApp</div>
               </div>
               <div class="ios-app">
                 <img class="ios-app-icon" src="assets/icons/music.jpg" alt="" />
@@ -579,7 +592,7 @@
                 <div class="ios-dock-icon ios-dock-brave"></div>
               </div>
               <div class="ios-dock-item">
-                <div class="ios-dock-icon ios-dock-messages"></div>
+                <div class="ios-dock-icon ios-dock-whatsapp"></div>
                 <span class="ios-badge">282</span>
               </div>
               <div class="ios-dock-item">
@@ -1057,7 +1070,7 @@
           ctx,
           S.iosN1,
           0,
-          'img[src="assets/icons/messages.jpg"]',
+          "#ios-notify-messages-preload",
           "Messages",
           "now",
           "Liquid Glass preview is ready for review.",
