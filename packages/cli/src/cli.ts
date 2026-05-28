@@ -193,8 +193,12 @@ if (!isHelp && !hasJsonFlag && command !== "upgrade") {
 const commandStart = Date.now();
 let commandFailed = false;
 
-// Async flush for normal exit (beforeExit fires when the event loop drains)
-process.on("beforeExit", () => {
+// Async flush for normal exit. `beforeExit` re-fires every time the
+// event loop drains, and the async `_flush()` itself schedules new
+// work — so a plain `on` listener would print the update notice (and
+// re-flush) once per drain (the user-reported double-print). `once`
+// detaches after first invocation, which is what we want for both.
+process.once("beforeExit", () => {
   _flush?.().catch(() => {});
   if (!hasJsonFlag) _printUpdateNotice?.();
 });
