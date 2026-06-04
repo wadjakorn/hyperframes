@@ -550,6 +550,89 @@ async function pollVideosReady(
   return check();
 }
 
+// Wait for every `<img>` with a non-`data:` src to have settled — either
+// successfully loaded (`complete && naturalWidth > 0`) or failed with a
+// broken-image marker (`complete && naturalWidth === 0`, the HTMLImageElement
+// equivalent of HTMLMediaElement.error). htmlCompiler localises remote `<img>`
+// URLs to the local file server before this point, so in practice this polls
+// for the local fetch to land — but the guard is a defensive net so that any
+// future composition path that leaves a remote URL in place won't capture
+// frames before the pixels arrive. Mirrors `pollVideosReady` for parity with
+// the video-side readiness contract (videos exit-early on `ve.error`; images
+// exit-early on `complete && naturalWidth === 0`).
+/** @internal exported for unit testing only */
+export async function pollImagesReady(
+  page: Page,
+  timeoutMs: number,
+  intervalMs: number = 100,
+): Promise<boolean> {
+  const check = async (): Promise<boolean> => {
+    return Boolean(
+      await page.evaluate(() => {
+        const imgs = Array.from(document.querySelectorAll("img"));
+        return (
+          imgs.length === 0 ||
+          imgs.every((img) => {
+            const ie = img as HTMLImageElement;
+            const src = ie.getAttribute("src") || "";
+            if (!src || src.startsWith("data:")) return true;
+            // A `complete` image with zero naturalWidth has settled with an
+            // error (404 / decode failure / CORS rejection / blocked). Treat
+            // as done — waiting won't make it load — and let the render
+            // continue with the broken-image marker visible. Mirrors how
+            // pollVideosReady treats `ve.error`.
+            if (ie.complete && ie.naturalWidth === 0) return true;
+            if (ie.complete && ie.naturalWidth > 0) return true;
+            return false;
+          })
+        );
+      }),
+    );
+  };
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return true;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return check();
+}
+
+// Force every successfully-loaded `<img>` to be GPU-uploaded before the first
+// frame capture. `naturalWidth > 0` means the bitmap has been decoded into
+// CPU memory, but compositor-side GPU upload can still happen lazily on first
+// paint. Calling `img.decode()` returns a Promise that resolves once the image
+// is ready for synchronous painting — eliminating the small first-frame race
+// between "image is technically loaded" and "the rasterized texture is on the
+// GPU and ready to composite".
+//
+// Note this is purely an init-time guard; it doesn't prevent Chrome from
+// evicting decoded pixels mid-render. The producer-side `localizeRemoteImageSources`
+// is what bounds the eviction risk (a re-fetch hits the local file server's
+// disk-backed paging, not S3 over the network).
+//
+// Critical: `decode()` on an in-flight image waits for the fetch to resolve.
+// If `pollImagesReady` timed out with some images still loading (`!complete`),
+// calling `decode()` on them would block here until the network finally
+// completes — or until puppeteer's evaluate timeout fires and throws an
+// uncaught error that aborts the render. Skip in-flight and broken images;
+// only force GPU upload for images that successfully loaded.
+async function decodeAllImages(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const imgs = Array.from(document.querySelectorAll("img"));
+    await Promise.all(
+      imgs.map((img) => {
+        const ie = img as HTMLImageElement;
+        if (typeof ie.decode !== "function") return Promise.resolve();
+        // Skip still-loading images (in-flight decode() would hang) and
+        // broken images (decode() rejects, but pre-filtering is clearer
+        // than relying on the .catch).
+        if (!ie.complete || ie.naturalWidth === 0) return Promise.resolve();
+        return ie.decode().catch(() => undefined);
+      }),
+    );
+  });
+}
+
 async function applyVideoMetadataHints(
   page: Page,
   hints: readonly CaptureVideoMetadataHint[] | undefined,
@@ -707,6 +790,26 @@ export async function initializeSession(session: CaptureSession): Promise<void> 
       );
     }
 
+    const imagesReady = await pollImagesReady(page, pageReadyTimeout);
+    if (!imagesReady) {
+      const failedImages = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll("img"))
+          .filter((img) => {
+            const ie = img as HTMLImageElement;
+            const src = ie.getAttribute("src") || "";
+            if (!src || src.startsWith("data:")) return false;
+            return !(ie.complete && ie.naturalWidth > 0);
+          })
+          .map((img) => (img as HTMLImageElement).src || img.getAttribute("src") || "(no src)")
+          .join(", ");
+      });
+      console.warn(
+        `[FrameCapture] Some image elements did not load within ${pageReadyTimeout}ms: ${failedImages}. ` +
+          `Continuing render — affected images may appear blank/missing in early frames.`,
+      );
+    }
+    await decodeAllImages(page);
+
     await page.evaluate(`document.fonts?.ready`);
     await waitForOptionalTailwindReady(page, pageReadyTimeout);
 
@@ -811,6 +914,28 @@ export async function initializeSession(session: CaptureSession): Promise<void> 
         `Continuing render — affected videos will appear as blank/black frames.`,
     );
   }
+
+  // Image readiness — parity with pollVideosReady. Defense against remote
+  // <img> URLs that bypass the htmlCompiler localize step.
+  const bfImagesReady = await pollImagesReady(page, pageReadyTimeout);
+  if (!bfImagesReady) {
+    const failedImages = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll("img"))
+        .filter((img) => {
+          const ie = img as HTMLImageElement;
+          const src = ie.getAttribute("src") || "";
+          if (!src || src.startsWith("data:")) return false;
+          return !(ie.complete && ie.naturalWidth > 0);
+        })
+        .map((img) => (img as HTMLImageElement).src || img.getAttribute("src") || "(no src)")
+        .join(", ");
+    });
+    console.warn(
+      `[FrameCapture] Some image elements did not load within ${pageReadyTimeout}ms: ${failedImages}. ` +
+        `Continuing render — affected images may appear blank/missing in early frames.`,
+    );
+  }
+  await decodeAllImages(page);
 
   // Font check (no rAF dependency — uses fonts.ready API directly)
   await page.evaluate(`document.fonts?.ready`);
