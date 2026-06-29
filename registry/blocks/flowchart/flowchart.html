@@ -378,11 +378,7 @@
           tl.addLabel("hold3", "+=0.8");
 
           // 9. Cursor drifts in
-          tl.to(
-            S + " #cursor",
-            { x: -1470, y: -540, duration: 1, ease: "power1.inOut" },
-            "hold3",
-          );
+          tl.to(S + " #cursor", { x: -1470, y: -540, duration: 1, ease: "power1.inOut" }, "hold3");
 
           // 10. Cursor clicks — selection border
           tl.add(() => {

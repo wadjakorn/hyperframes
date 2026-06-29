@@ -407,29 +407,13 @@
         gsap.set("#reply-actions", { y: 8, opacity: 0 });
         gsap.set("#typing-dots span", { opacity: 0.35 });
 
-        tl.to(
-          "#gp1",
-          { left: "1326px", opacity: 1, duration: 0.38, ease: "power3.out" },
-          0.18,
-        );
-        tl.to(
-          "#txt1",
-          { x: -14, opacity: 1, duration: 0.38, ease: "power3.out" },
-          0.18,
-        );
+        tl.to("#gp1", { left: "1326px", opacity: 1, duration: 0.38, ease: "power3.out" }, 0.18);
+        tl.to("#txt1", { x: -14, opacity: 1, duration: 0.38, ease: "power3.out" }, 0.18);
         tl.to("#gp1", { left: "1340px", duration: 0.16, ease: "power2.out" }, 0.56);
         tl.to("#txt1", { x: 0, duration: 0.16, ease: "power2.out" }, 0.56);
 
-        tl.to(
-          "#gp2",
-          { left: "1326px", opacity: 1, duration: 0.36, ease: "power3.out" },
-          0.82,
-        );
-        tl.to(
-          "#txt2",
-          { x: -14, opacity: 1, duration: 0.36, ease: "power3.out" },
-          0.82,
-        );
+        tl.to("#gp2", { left: "1326px", opacity: 1, duration: 0.36, ease: "power3.out" }, 0.82);
+        tl.to("#txt2", { x: -14, opacity: 1, duration: 0.36, ease: "power3.out" }, 0.82);
         tl.to("#gp2", { left: "1340px", duration: 0.16, ease: "power2.out" }, 1.18);
         tl.to("#txt2", { x: 0, duration: 0.16, ease: "power2.out" }, 1.18);
 
@@ -485,26 +469,10 @@
           4.25,
         );
 
-        tl.to(
-          "#gp1",
-          { left: "1980px", opacity: 0, duration: 0.42, ease: "power2.in" },
-          6.72,
-        );
-        tl.to(
-          "#txt1",
-          { x: 640, opacity: 0, duration: 0.42, ease: "power2.in" },
-          6.72,
-        );
-        tl.to(
-          "#gp2",
-          { left: "1980px", opacity: 0, duration: 0.42, ease: "power2.in" },
-          6.9,
-        );
-        tl.to(
-          "#txt2",
-          { x: 640, opacity: 0, duration: 0.42, ease: "power2.in" },
-          6.9,
-        );
+        tl.to("#gp1", { left: "1980px", opacity: 0, duration: 0.42, ease: "power2.in" }, 6.72);
+        tl.to("#txt1", { x: 640, opacity: 0, duration: 0.42, ease: "power2.in" }, 6.72);
+        tl.to("#gp2", { left: "1980px", opacity: 0, duration: 0.42, ease: "power2.in" }, 6.9);
+        tl.to("#txt2", { x: 640, opacity: 0, duration: 0.42, ease: "power2.in" }, 6.9);
 
         window.__timelines["liquid-glass-notification"] = tl;
       })();
