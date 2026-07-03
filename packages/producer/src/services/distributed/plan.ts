@@ -903,6 +903,9 @@ export async function plan(
     abortSignal,
     assertNotAborted,
   });
+  if (audioResult.audioError) {
+    log.warn(`[Render] Audio mix failed — output will be video-only: ${audioResult.audioError}`);
+  }
 
   // Promote staged artifacts from the temp work tree into the final planDir
   // shape. `workDir` is `<planDir>/.plan-work/` — always the same filesystem

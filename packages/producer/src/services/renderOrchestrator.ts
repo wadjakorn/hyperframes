@@ -1356,6 +1356,9 @@ export async function executeRenderJob(
     );
     const { audioOutputPath, hasAudio } = audioResult;
     perfStages.audioProcessMs = audioResult.audioProcessMs;
+    if (audioResult.audioError) {
+      log.warn(`[Render] Audio mix failed — output will be video-only: ${audioResult.audioError}`);
+    }
 
     // ── Stage 4: Frame capture ──────────────────────────────────────────
     const stage4Start = Date.now();
