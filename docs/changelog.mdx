@@ -9,6 +9,23 @@ Recent HyperFrames releases, including user-facing features, fixes, and migratio
 {/* New release entries are prepended by `bun run changelog:draft <version> --write`. */}
 
 <Update
+  label="HyperFrames v0.7.33"
+  description="Released - 2026-07-04"
+  tags={["Release", "Producer"]}
+>
+This release fixes an HDR compositing regression where hidden or future timed DOM
+descendants could be revived during per-layer screenshots and bleed into HDR
+frames. DOM-layer masking now preserves those hidden descendants while capturing
+the active layer, keeping HDR output aligned with preview timing.
+
+## Fixes
+
+- **Producer:** Avoid reviving hidden DOM in HDR layers ([bb066077b](https://github.com/heygen-com/hyperframes/commit/bb066077b4ecbf4efc021779e37da6475c6f80dd), [#1935](https://github.com/heygen-com/hyperframes/pull/1935))
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.7.32...v0.7.33).
+</Update>
+
+<Update
   label="HyperFrames v0.7.32"
   description="Released - 2026-07-04"
   tags={["Release", "Hyperframes Media", "CLI", "Video Workflows"]}
