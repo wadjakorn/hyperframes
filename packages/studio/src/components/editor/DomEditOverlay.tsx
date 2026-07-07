@@ -418,7 +418,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
         <div
           aria-hidden="true"
           data-dom-edit-hover-box="true"
-          className="pointer-events-none absolute rounded-md border border-studio-accent/80 bg-studio-accent/5 shadow-[0_0_0_1px_rgba(60,230,172,0.25)]"
+          className="pointer-events-none absolute rounded-md border border-studio-accent/80 shadow-[0_0_0_1px_rgba(60,230,172,0.25)]"
           style={hugRectForElement(hoverRect, hoverSelection.element)}
         />
       )}
@@ -428,7 +428,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
             <div
               key={item.key}
               aria-hidden="true"
-              className="pointer-events-none absolute rounded-xl border border-studio-accent/70 bg-studio-accent/[0.03]"
+              className="pointer-events-none absolute rounded-xl border border-studio-accent/70"
               style={{
                 left: item.rect.left,
                 top: item.rect.top,
@@ -439,7 +439,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
           ))}
           <div
             data-dom-edit-selection-box="true"
-            className="pointer-events-auto absolute rounded-xl border border-studio-accent bg-studio-accent/5 shadow-[0_0_0_1px_rgba(60,230,172,0.3)]"
+            className="pointer-events-auto absolute rounded-xl border border-studio-accent shadow-[0_0_0_1px_rgba(60,230,172,0.3)]"
             style={{
               left: groupBounds.left,
               top: groupBounds.top,
@@ -520,7 +520,7 @@ export const DomEditOverlay = memo(function DomEditOverlay({
           >
             {cropOutlineInsetPx && (
               <div
-                className="pointer-events-none absolute rounded-md border border-studio-accent/80 shadow-[0_0_0_1px_rgba(60,230,172,0.25)] bg-studio-accent/5"
+                className="pointer-events-none absolute rounded-md border border-studio-accent/80 shadow-[0_0_0_1px_rgba(60,230,172,0.25)]"
                 style={{
                   left: cropOutlineInsetPx.left,
                   top: cropOutlineInsetPx.top,
