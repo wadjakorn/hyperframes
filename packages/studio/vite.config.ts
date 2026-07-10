@@ -189,6 +189,19 @@ export default defineConfig({
   },
   server: {
     port: 5190,
+    // Vite blocks requests whose Host header isn't localhost (DNS-rebinding
+    // protection). When the dev server is reached over LAN / Tailscale (e.g. via
+    // a magic-DNS name), set HF_STUDIO_ALLOWED_HOSTS to relax it:
+    //   HF_STUDIO_ALLOWED_HOSTS=all              → allow any host
+    //   HF_STUDIO_ALLOWED_HOSTS=host-a,host-b    → allow just these
+    // Unset keeps Vite's default (localhost only).
+    allowedHosts: process.env.HF_STUDIO_ALLOWED_HOSTS
+      ? process.env.HF_STUDIO_ALLOWED_HOSTS === "all"
+        ? true
+        : process.env.HF_STUDIO_ALLOWED_HOSTS.split(",")
+            .map((h) => h.trim())
+            .filter(Boolean)
+      : undefined,
   },
   ssr: {
     // recast / @babel/parser are CommonJS and call `require("fs")`. They are
