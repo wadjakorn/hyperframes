@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HyperFrames Console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%238b7dff'/><rect x='9' y='9' width='14' height='14' rx='3.5' fill='%230b0c0f'/></svg>" />
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0b0c0f; --surface:#131519; --inset:#0c0e12; --line:#22252d; --line-2:#2b2f39;
+    --fg:#eceef1; --mut:#828a97; --dim:#5b626e;
+    --iris:#8b7dff; --iris-soft:rgba(139,125,255,.13); --iris-line:rgba(139,125,255,.42);
+    --live:#4fe3aa; --live-soft:rgba(79,227,170,.13);
+    --amber:#f5b544; --amber-soft:rgba(245,181,68,.15);
+    --alert:#ff6b6b; --alert-soft:rgba(255,107,107,.13);
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --r:11px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--fg);font:14.5px/1.55 var(--sans);
+    background-image:radial-gradient(1200px 500px at 82% -8%, rgba(139,125,255,.07), transparent 70%);
+    -webkit-font-smoothing:antialiased;}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.1px}
+
+  /* ── command bar ─────────────────────────────────────────────── */
+  .bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
+    padding:14px 24px;border-bottom:1px solid var(--line);
+    background:rgba(11,12,15,.82);backdrop-filter:blur(14px)}
+  .mark{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.2px}
+  .mark .glyph{width:22px;height:22px;border-radius:6px;background:var(--iris);
+    display:grid;place-items:center;flex:none}
+  .mark .glyph::after{content:"";width:9px;height:9px;border-radius:2px;background:var(--bg)}
+  .mark .sub{color:var(--mut);font-weight:500;font-size:12px;letter-spacing:.14em;text-transform:uppercase}
+  .live{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--mut);
+    padding:5px 11px;border:1px solid var(--line);border-radius:99px}
+  .live .beat{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none}
+  .live.on .beat{background:var(--live);box-shadow:0 0 0 0 var(--live-soft);animation:beat 2s infinite}
+  .live.on{color:var(--fg);border-color:var(--line-2)}
+  @keyframes beat{0%{box-shadow:0 0 0 0 rgba(79,227,170,.5)}70%{box-shadow:0 0 0 7px rgba(79,227,170,0)}100%{box-shadow:0 0 0 0 rgba(79,227,170,0)}}
+  .grow{flex:1}
+
+  /* ── layout ──────────────────────────────────────────────────── */
+  main{max-width:940px;margin:0 auto;padding:30px 24px 80px;display:flex;flex-direction:column;gap:34px}
+  .block{display:flex;flex-direction:column;gap:14px}
+  .eyebrow{display:flex;align-items:baseline;gap:12px;padding:0 2px}
+  .eyebrow h2{font-size:12px;font-weight:650;letter-spacing:.16em;text-transform:uppercase;color:var(--fg)}
+  .eyebrow .tick{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .eyebrow .rt{margin-left:auto}
+
+  /* ── buttons ─────────────────────────────────────────────────── */
+  .btn{font:inherit;font-weight:600;font-size:13.5px;cursor:pointer;border-radius:9px;
+    padding:8px 15px;border:1px solid var(--line-2);background:#191c22;color:var(--fg);
+    transition:transform .08s ease,border-color .12s,background .12s;white-space:nowrap}
+  .btn:hover{border-color:var(--dim)}
+  .btn:active{transform:translateY(1px)}
+  .btn:focus-visible{outline:2px solid var(--iris);outline-offset:2px}
+  .btn.primary{background:var(--iris);border-color:var(--iris);color:#0a0b0f}
+  .btn.primary:hover{background:#9d90ff;border-color:#9d90ff}
+  .btn.ghost{background:transparent}
+  .btn.danger{background:transparent;border-color:transparent;color:var(--alert)}
+  .btn.danger:hover{border-color:var(--alert);background:var(--alert-soft)}
+  .btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
+  .btn:disabled{opacity:.5;cursor:default;transform:none}
+
+  /* ── channel strips (servers) ────────────────────────────────── */
+  .strips{display:flex;flex-direction:column;gap:9px}
+  .strip{display:flex;align-items:center;gap:14px;position:relative;
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+    padding:14px 16px 14px 18px;overflow:hidden}
+  .strip::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dim)}
+  .strip.up::before{background:var(--live)}
+  .strip .beat{width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none}
+  .strip.up .beat{background:var(--live);box-shadow:0 0 10px var(--live)}
+  .strip .who{min-width:0;flex:1}
+  .strip .name{font-weight:600;font-size:15px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .strip .path{font-family:var(--mono);font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .chip{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--iris);
+    background:var(--iris-soft);border:1px solid var(--iris-line);border-radius:7px;padding:3px 9px;flex:none}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line-2);
+    border-radius:6px;padding:3px 8px;flex:none}
+  .tag.net{color:var(--amber);border-color:var(--amber-soft);background:var(--amber-soft)}
+  .strip .acts{display:flex;gap:7px;flex:none}
+  a.btn{text-decoration:none;display:inline-flex;align-items:center}
+
+  /* ── agent console ───────────────────────────────────────────── */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+  .field{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .hint{color:var(--mut);font-size:12.5px}
+  textarea,input,select{font:inherit;color:var(--fg);background:var(--inset);
+    border:1px solid var(--line-2);border-radius:9px;padding:9px 12px}
+  textarea:focus,input:focus,select:focus{outline:none;border-color:var(--iris-line);box-shadow:0 0 0 3px var(--iris-soft)}
+  textarea{width:100%;resize:vertical;min-height:74px;margin-top:12px;line-height:1.5}
+  select.mono,input.mono{font-family:var(--mono);font-size:13px}
+  select{min-width:220px;cursor:pointer}
+  .rowend{display:flex;justify-content:flex-end;gap:10px;margin-top:10px}
+  .term{display:none;margin-top:14px;background:var(--inset);border:1px solid var(--line);
+    border-radius:9px;padding:13px 15px;max-height:340px;overflow:auto;
+    font-family:var(--mono);font-size:12.5px;line-height:1.6}
+  .term .ln{white-space:pre-wrap;word-break:break-word}
+  .term .assistant{color:var(--fg)}
+  .term .tool{color:var(--iris)}
+  .term .system,.term .start,.term .end{color:var(--dim)}
+  .term .result{color:var(--live)}
+  .term .error{color:var(--alert)}
+
+  /* ── jobs ────────────────────────────────────────────────────── */
+  .jobbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .jobs{display:flex;flex-direction:column;gap:8px}
+  .job{display:flex;align-items:center;gap:13px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;padding:11px 15px}
+  .job .k{font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
+    padding:3px 8px;border-radius:6px;background:#1b1e25;color:var(--mut);flex:none;width:82px;text-align:center}
+  .job.render .k{color:var(--amber);background:var(--amber-soft)}
+  .job.agent .k{color:var(--iris);background:var(--iris-soft)}
+  .job .p{font-family:var(--mono);font-size:12px;color:var(--mut);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bar-wrap{flex:1.4;min-width:120px;display:flex;align-items:center;gap:9px}
+  .progress{flex:1;height:6px;background:#1b1e25;border-radius:99px;overflow:hidden}
+  .progress>i{display:block;height:100%;background:var(--amber);border-radius:99px;transition:width .35s ease}
+  .st{font-family:var(--mono);font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;flex:none}
+  .st.running{color:var(--amber);background:var(--amber-soft)}
+  .st.done{color:var(--live);background:var(--live-soft)}
+  .st.failed{color:var(--alert);background:var(--alert-soft)}
+  .st.stopped{color:var(--mut);background:#1b1e25}
+  .job .t{font-family:var(--mono);font-size:12px;color:var(--dim);flex:none;width:52px;text-align:right}
+
+  /* ── segmented launch ────────────────────────────────────────── */
+  .seg{display:inline-flex;background:var(--inset);border:1px solid var(--line-2);border-radius:9px;padding:3px;gap:3px;align-self:flex-start}
+  .seg button{font:inherit;font-size:13px;font-weight:600;color:var(--mut);background:transparent;border:0;
+    border-radius:7px;padding:6px 14px;cursor:pointer}
+  .seg button.on{background:#22262f;color:var(--fg)}
+  .tab{display:none}
+  .tab.on{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+  .toggle{display:inline-flex;align-items:center;gap:8px;color:var(--mut);cursor:pointer;user-select:none;font-size:13px}
+  .toggle input{accent-color:var(--iris);width:15px;height:15px}
+  .empty{color:var(--mut);font-size:13px;padding:16px;text-align:center;border:1px dashed var(--line-2);border-radius:10px}
+  .warn{background:var(--alert-soft);border:1px solid rgba(255,107,107,.32);border-radius:10px;
+    padding:11px 15px;font-size:12.5px;color:#ffb4b4;line-height:1.5}
+  a.link{color:var(--iris);text-decoration:none;font-weight:600}
+  a.link:hover{text-decoration:underline}
+
+  #toast{position:fixed;right:18px;bottom:18px;z-index:50;background:var(--surface);
+    border:1px solid var(--line-2);border-radius:11px;padding:11px 15px;max-width:440px;
+    font-size:13px;line-height:1.45;white-space:pre-wrap;opacity:0;transform:translateY(10px);
+    transition:.22s ease;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  #toast.show{opacity:1;transform:none}
+  #toast.err{border-color:var(--alert);color:#ffbcbc}
+
+  @media (max-width:620px){
+    .strip{flex-wrap:wrap}.strip .acts{width:100%;justify-content:flex-end}
+    select{min-width:0;flex:1}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="mark"><span class="glyph"></span>hyperframes<span class="sub">console</span></div>
+  <div class="live" id="live"><span class="beat"></span><span id="liveText">connecting…</span></div>
+  <span class="grow"></span>
+  <label class="toggle"><input type="checkbox" id="autopoll" checked>auto</label>
+  <button class="btn ghost sm" id="refresh">Refresh</button>
+</header>
+
+<main>
+  <section class="block">
+    <div class="eyebrow"><h2>Servers</h2><span class="tick" id="serversTick"></span>
+      <button class="btn danger sm rt" id="stopall">Stop all</button></div>
+    <div id="strips" class="strips"><div class="empty">Connecting…</div></div>
+  </section>
+
+  <section class="block">
+    <div class="eyebrow"><h2>Agent</h2></div>
+    <div class="card">
+      <div class="field">
+        <select id="agentProject" class="mono"></select>
+        <span class="hint">Edits the composition in this project. The preview reloads as it works.</span>
+      </div>
+      <textarea id="agentPrompt" placeholder="Tell the agent what to change — e.g. make the subtitles a little smaller and split the opening hook into two cues"></textarea>
+      <div class="rowend"><button class="btn primary" id="agentSend">Send</button></div>
+      <pre id="agentOut" class="term"></pre>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="eyebrow"><h2>Jobs</h2><span class="tick" id="jobsTick"></span></div>
+    <div class="jobbar">
+      <select id="renderProject" class="mono"></select>
+      <button class="btn ghost" id="renderBtn">Render to MP4</button>
+      <span class="hint">Renders and agent runs appear here with live progress.</span>
+    </div>
+    <div id="jobs" class="jobs"><div class="empty">Nothing running.</div></div>
+  </section>
+
+  <section class="block">
+    <div class="eyebrow"><h2>Launch</h2></div>
+    <div class="card">
+      <div class="seg">
+        <button data-tab="start" class="on">Start</button>
+        <button data-tab="create">Create</button>
+      </div>
+      <div id="tab-start" class="tab on" style="margin-top:14px">
+        <select id="startProject" class="mono"></select>
+        <button class="btn primary" id="startBtn">Start server</button>
+        <label class="toggle"><input type="checkbox" id="exposeGlobal" checked>Expose to network</label>
+      </div>
+      <div id="tab-create" class="tab" style="margin-top:14px">
+        <input id="newName" class="mono" placeholder="project-name" style="min-width:180px">
+        <select id="newExample" title="starter"></select>
+        <select id="newRes" title="resolution">
+          <option value="1080p">landscape 1080p</option>
+          <option value="portrait">portrait 1080×1920</option>
+          <option value="square">square</option>
+          <option value="4k">landscape 4k</option>
+        </select>
+        <button class="btn ghost" id="createBtn">Create</button>
+        <button class="btn primary" id="createStartBtn">Create &amp; start</button>
+      </div>
+      <p class="hint" style="margin-top:12px">A server is the full Studio editor bound to one project. Create scaffolds <span class="mono">projects/&lt;name&gt;</span>.</p>
+    </div>
+  </section>
+
+  <div class="warn" id="exposeWarn" hidden></div>
+</main>
+<div id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let pollTimer = null;
+const POST = (obj) => ({ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(obj) });
+
+function toast(msg, err=false){
+  const t = $("#toast"); t.textContent = msg; t.className = "show" + (err ? " err" : "");
+  clearTimeout(t._h); t._h = setTimeout(()=>{ t.className=""; }, 4200);
+}
+async function api(path, opts={}){
+  const r = await fetch(path, opts);
+  let j = {}; try { j = await r.json(); } catch {}
+  if(!r.ok || j.ok === false) throw new Error(String(j.output||j.error||("HTTP "+r.status)).trim());
+  return j;
+}
+const esc = (s)=>String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const now = ()=> new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+
+/* ── servers ── */
+async function refresh(){
+  try {
+    const { instances, host } = await api("/api/status");
+    const up = instances.filter(i=>i.up).length;
+    $("#live").className = "live" + (up ? " on" : "");
+    $("#liveText").textContent = (up ? up+" live" : "idle") + " · via " + host;
+    const el = $("#strips");
+    if(!instances.length){ el.innerHTML = '<div class="empty">No servers running. Launch one below.</div>'; }
+    else el.innerHTML = instances.map(i=>`
+      <div class="strip ${i.up?"up":""}">
+        <span class="beat"></span>
+        <div class="who">
+          <div class="name">${esc(i.project.split("/").pop())}</div>
+          <div class="path">${esc(i.project)}</div>
+        </div>
+        <span class="chip">:${i.port}</span>
+        <span class="tag ${i.expose?"net":""}">${i.expose?"network":"local"}</span>
+        <div class="acts">
+          ${i.up?`<a class="btn primary sm" href="${esc(i.url)}" target="_blank" rel="noopener">Open Studio ↗</a>`:""}
+          <button class="btn ghost sm" onclick="doRestart('${i.port}')">Restart</button>
+          <button class="btn danger sm" onclick="doStop('${i.port}')">Stop</button>
+        </div>
+      </div>`).join("");
+    $("#serversTick").textContent = "updated " + now();
+  } catch(e){ if(e.message!=="unauthorized") toast("Couldn’t reach the manager: "+e.message, true); }
+}
+async function doStop(t){ try{ await api("/api/stop", POST({target:t})); toast("Stopped "+t); refresh(); }catch(e){ toast(e.message,true);} }
+async function doRestart(t){ try{ toast("Restarting "+t+"…"); await api("/api/restart", POST({target:t})); toast("Restarted "+t); refresh(); }catch(e){ toast(e.message,true);} }
+
+/* ── projects into every selector ── */
+async function loadProjects(){
+  try{
+    const { projects } = await api("/api/projects");
+    const opts = projects.map(p=>`<option value="${esc(p.path)}">${esc(p.name)} · ${p.source}</option>`).join("");
+    ["#startProject","#agentProject","#renderProject"].forEach(s=>{ $(s).innerHTML = opts; });
+    const examples = ["blank", ...projects.filter(p=>p.source==="example").map(p=>p.name)];
+    $("#newExample").innerHTML = examples.map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join("");
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ── jobs ── */
+const fmt = (ms)=>{ const s=Math.floor(ms/1000); return s<60?s+"s":Math.floor(s/60)+"m"+String(s%60).padStart(2,"0"); };
+async function pollJobs(){
+  try{
+    const { jobs } = await api("/api/jobs");
+    const el = $("#jobs");
+    if(!jobs.length){ el.innerHTML = '<div class="empty">Nothing running.</div>'; }
+    else el.innerHTML = jobs.map(j=>{
+      const end = j.endedAt || Date.now();
+      const prog = j.pct!=null
+        ? `<div class="bar-wrap"><span class="progress"><i style="width:${j.pct}%"></i></span><span class="t">${j.pct}%</span></div>`
+        : `<span class="p">${esc((j.lastLine||"").slice(0,60))||"—"}</span>`;
+      return `<div class="job ${esc(j.kind)}">
+        <span class="k">${esc(j.kind)}</span>
+        <span class="p">${esc(j.project.split("/").pop())}</span>
+        ${prog}
+        <span class="st ${j.state==="running"?"running":esc(j.state)}">${esc(j.state)}</span>
+        <span class="t">${fmt(end-j.startedAt)}</span>
+        ${j.state==="running"?`<button class="btn danger sm" onclick="stopJob('${j.id}')">Stop</button>`:""}
+      </div>`;
+    }).join("");
+    $("#jobsTick").textContent = jobs.length ? "updated "+now() : "";
+  }catch(e){ /* best-effort */ }
+}
+async function stopJob(id){ try{ await api("/api/jobs/stop", POST({id})); pollJobs(); }catch(e){ toast(e.message,true);} }
+async function startRender(){
+  try{ const r = await api("/api/jobs/render", POST({project:$("#renderProject").value})); toast("Render started · "+r.id); pollJobs(); }
+  catch(e){ toast(e.message,true); }
+}
+
+/* ── agent (SSE) ── */
+const PREFIX = { tool:"", system:"", start:"▸ ", end:"■ ", result:"✓ ", error:"✕ " };
+async function sendAgent(){
+  const project = $("#agentProject").value, prompt = $("#agentPrompt").value.trim();
+  if(!prompt) return toast("Type a prompt first", true);
+  const out = $("#agentOut"); out.style.display="block"; out.innerHTML="";
+  const line = (cls,text)=>{ const d=document.createElement("div"); d.className="ln "+cls; d.textContent=(PREFIX[cls]||"")+text; out.appendChild(d); out.scrollTop=out.scrollHeight; };
+  const btn = $("#agentSend"); btn.disabled = true; btn.textContent = "Working…";
+  try{
+    const r = await fetch("/api/agent", POST({project, prompt}));
+    if(!r.ok){ const j = await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf="";
+    for(;;){
+      const { done, value } = await reader.read(); if(done) break;
+      buf += dec.decode(value,{stream:true});
+      let i; while((i=buf.indexOf("\n\n"))>=0){
+        const chunk = buf.slice(0,i); buf = buf.slice(i+2);
+        const m = chunk.match(/^data: (.*)$/s); if(!m) continue;
+        try{ const e = JSON.parse(m[1]); line(e.t==="assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text); }catch{}
+      }
+    }
+    pollJobs();
+  }catch(e){ line("error", e.message); }
+  finally{ btn.disabled = false; btn.textContent = "Send"; }
+}
+
+/* ── launch ── */
+async function create(start){
+  const name = $("#newName").value.trim();
+  if(!/^[a-zA-Z0-9_-]+$/.test(name)) return toast("Name: letters, digits, - and _ only", true);
+  try{
+    toast((start?"Creating & starting ":"Creating ")+name+"…");
+    await api("/api/create", POST({name, example:$("#newExample").value, resolution:$("#newRes").value, start, expose:expose()}));
+    toast((start?"Created & started ":"Created ")+name); $("#newName").value="";
+    await loadProjects(); refresh();
+  }catch(e){ toast(e.message,true); }
+}
+const expose = ()=> $("#exposeGlobal").checked;
+function updateWarn(){
+  const w = $("#exposeWarn");
+  if(expose()){ w.hidden=false; w.textContent = "Expose is on — servers bind 0.0.0.0, so anyone who can reach this box can use their unauthenticated file and render API. Turn it off for localhost only."; }
+  else w.hidden = true;
+}
+
+/* ── wiring ── */
+$("#stopall").onclick = ()=> doStop("all");
+$("#refresh").onclick = ()=>{ refresh(); pollJobs(); };
+$("#startBtn").onclick = async ()=>{
+  const project = $("#startProject").value;
+  try{ toast("Starting "+project+"…"); await api("/api/start", POST({project, expose:expose()})); toast("Started "+project); refresh(); }
+  catch(e){ toast(e.message,true); }
+};
+$("#renderBtn").onclick = startRender;
+$("#agentSend").onclick = sendAgent;
+$("#createBtn").onclick = ()=> create(false);
+$("#createStartBtn").onclick = ()=> create(true);
+$("#exposeGlobal").onchange = updateWarn;
+document.querySelectorAll(".seg button").forEach(b=> b.onclick = ()=>{
+  document.querySelectorAll(".seg button").forEach(x=>x.classList.toggle("on", x===b));
+  ["start","create"].forEach(t=> $("#tab-"+t).classList.toggle("on", t===b.dataset.tab));
+});
+function setPoll(on){
+  clearInterval(pollTimer); pollTimer=null;
+  if(on) pollTimer = setInterval(()=>{ refresh(); pollJobs(); }, 3000);
+}
+$("#autopoll").onchange = (e)=> setPoll(e.target.checked);
+
+updateWarn(); loadProjects(); refresh(); pollJobs(); setPoll(true);
+</script>
+</body>
+</html>
