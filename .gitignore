@@ -147,3 +147,9 @@ tmp/
 
 # Local editor settings
 .zed/
+
+# HyperFrames dev-ui runtime (pids/logs from scripts/dev-ui.sh)
+.dev-ui/
+
+# dev-ui scaffolded projects
+projects/
