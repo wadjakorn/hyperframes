@@ -1,0 +1,271 @@
+{
+  "text": "For those who use codec or codec on terminal, you have to try this. This is called terminal multiplexer. But this one is a little bit special. For those who have used Tmux, this is Herder. It's a terminal multiplexer that accepts AI agent.",
+  "language_code": "en",
+  "engine": "whisperx(small+wav2vec2)",
+  "words": [
+    {
+      "text": "For",
+      "start": 0.111,
+      "end": 0.251,
+      "type": "word"
+    },
+    {
+      "text": "those",
+      "start": 0.271,
+      "end": 0.431,
+      "type": "word"
+    },
+    {
+      "text": "who",
+      "start": 0.451,
+      "end": 0.832,
+      "type": "word"
+    },
+    {
+      "text": "use",
+      "start": 1.292,
+      "end": 1.432,
+      "type": "word"
+    },
+    {
+      "text": "codec",
+      "start": 1.472,
+      "end": 1.832,
+      "type": "word"
+    },
+    {
+      "text": "or",
+      "start": 1.912,
+      "end": 2.012,
+      "type": "word"
+    },
+    {
+      "text": "codec",
+      "start": 2.032,
+      "end": 2.333,
+      "type": "word"
+    },
+    {
+      "text": "on",
+      "start": 2.773,
+      "end": 2.953,
+      "type": "word"
+    },
+    {
+      "text": "terminal,",
+      "start": 2.993,
+      "end": 3.393,
+      "type": "word"
+    },
+    {
+      "text": "you",
+      "start": 3.413,
+      "end": 3.574,
+      "type": "word"
+    },
+    {
+      "text": "have",
+      "start": 3.954,
+      "end": 4.154,
+      "type": "word"
+    },
+    {
+      "text": "to",
+      "start": 4.194,
+      "end": 4.354,
+      "type": "word"
+    },
+    {
+      "text": "try",
+      "start": 4.454,
+      "end": 4.614,
+      "type": "word"
+    },
+    {
+      "text": "this.",
+      "start": 4.634,
+      "end": 6.296,
+      "type": "word"
+    },
+    {
+      "text": "This",
+      "start": 6.316,
+      "end": 6.476,
+      "type": "word"
+    },
+    {
+      "text": "is",
+      "start": 6.516,
+      "end": 6.596,
+      "type": "word"
+    },
+    {
+      "text": "called",
+      "start": 6.616,
+      "end": 7.016,
+      "type": "word"
+    },
+    {
+      "text": "terminal",
+      "start": 7.617,
+      "end": 7.997,
+      "type": "word"
+    },
+    {
+      "text": "multiplexer.",
+      "start": 8.017,
+      "end": 8.917,
+      "type": "word"
+    },
+    {
+      "text": "But",
+      "start": 9.518,
+      "end": 9.618,
+      "type": "word"
+    },
+    {
+      "text": "this",
+      "start": 9.658,
+      "end": 9.798,
+      "type": "word"
+    },
+    {
+      "text": "one",
+      "start": 9.878,
+      "end": 9.998,
+      "type": "word"
+    },
+    {
+      "text": "is",
+      "start": 10.018,
+      "end": 10.078,
+      "type": "word"
+    },
+    {
+      "text": "a",
+      "start": 10.138,
+      "end": 10.198,
+      "type": "word"
+    },
+    {
+      "text": "little",
+      "start": 10.218,
+      "end": 10.419,
+      "type": "word"
+    },
+    {
+      "text": "bit",
+      "start": 10.459,
+      "end": 10.639,
+      "type": "word"
+    },
+    {
+      "text": "special.",
+      "start": 11.379,
+      "end": 11.599,
+      "type": "word"
+    },
+    {
+      "text": "For",
+      "start": 11.619,
+      "end": 11.699,
+      "type": "word"
+    },
+    {
+      "text": "those",
+      "start": 11.719,
+      "end": 11.92,
+      "type": "word"
+    },
+    {
+      "text": "who",
+      "start": 11.94,
+      "end": 12.02,
+      "type": "word"
+    },
+    {
+      "text": "have",
+      "start": 12.06,
+      "end": 12.22,
+      "type": "word"
+    },
+    {
+      "text": "used",
+      "start": 12.3,
+      "end": 12.42,
+      "type": "word"
+    },
+    {
+      "text": "Tmux,",
+      "start": 12.44,
+      "end": 13.701,
+      "type": "word"
+    },
+    {
+      "text": "this",
+      "start": 13.721,
+      "end": 13.861,
+      "type": "word"
+    },
+    {
+      "text": "is",
+      "start": 13.961,
+      "end": 14.081,
+      "type": "word"
+    },
+    {
+      "text": "Herder.",
+      "start": 14.602,
+      "end": 15.002,
+      "type": "word"
+    },
+    {
+      "text": "It's",
+      "start": 15.022,
+      "end": 15.262,
+      "type": "word"
+    },
+    {
+      "text": "a",
+      "start": 15.802,
+      "end": 16.123,
+      "type": "word"
+    },
+    {
+      "text": "terminal",
+      "start": 16.143,
+      "end": 16.443,
+      "type": "word"
+    },
+    {
+      "text": "multiplexer",
+      "start": 16.463,
+      "end": 17.063,
+      "type": "word"
+    },
+    {
+      "text": "that",
+      "start": 17.083,
+      "end": 17.163,
+      "type": "word"
+    },
+    {
+      "text": "accepts",
+      "start": 17.183,
+      "end": 18.244,
+      "type": "word"
+    },
+    {
+      "text": "AI",
+      "start": 18.324,
+      "end": 18.524,
+      "type": "word"
+    },
+    {
+      "text": "agent.",
+      "start": 18.584,
+      "end": 18.825,
+      "type": "word"
+    }
+  ]
+}

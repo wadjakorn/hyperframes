@@ -235,3 +235,49 @@ test("isTorchcodecFfmpegMismatch: only ffmpeg ≥ 8 mismatches", () => {
   assert.equal(t.isTorchcodecFfmpegMismatch(4), false);
   assert.equal(t.isTorchcodecFfmpegMismatch(null), false);
 });
+
+test("buildWhisperxCommand: uvx backend pins the spec and wraps cli args", () => {
+  const { cmd, args } = t.buildWhisperxCommand(["/p/a.wav", "--model", "small"], {
+    whisperxSpec: "whisperx==3.8.6",
+  });
+  assert.equal(cmd, "uvx");
+  assert.deepEqual(args, [
+    "--python",
+    "3.12",
+    "--from",
+    "whisperx==3.8.6",
+    "whisperx",
+    "/p/a.wav",
+    "--model",
+    "small",
+  ]);
+});
+
+test("buildWhisperxCommand: docker backend mounts project at its own path, sets --user", () => {
+  const { cmd, args } = t.buildWhisperxCommand(["/proj/a.wav", "--model", "small"], {
+    dockerImage: "hyperframes/whisperx:3.8.6",
+    project: "/proj",
+    uid: 1000,
+    gid: 1000,
+  });
+  assert.equal(cmd, "docker");
+  // same absolute path inside the container → cli paths need no rewriting
+  assert.ok(args.includes("-v") && args[args.indexOf("-v") + 1] === "/proj:/proj");
+  assert.equal(args[args.indexOf("-w") + 1], "/proj");
+  assert.equal(args[args.indexOf("--user") + 1], "1000:1000");
+  // image precedes the whisperx cli args
+  const img = args.indexOf("hyperframes/whisperx:3.8.6");
+  assert.deepEqual(args.slice(img + 1), ["/proj/a.wav", "--model", "small"]);
+});
+
+test("buildWhisperxCommand: docker forwards only set HF_* env, omits --user without uid", () => {
+  const { args } = t.buildWhisperxCommand(["/proj/a.wav"], {
+    dockerImage: "img",
+    project: "/proj",
+    env: { HF_ENDPOINT: "https://hf-mirror.com", HF_HUB_OFFLINE: "1", IGNORED: "x" },
+  });
+  assert.ok(!args.includes("--user"));
+  assert.equal(args[args.indexOf("-e") + 1], "HF_ENDPOINT=https://hf-mirror.com");
+  assert.ok(args.join(" ").includes("-e HF_HUB_OFFLINE=1"));
+  assert.ok(!args.join(" ").includes("IGNORED"));
+});
