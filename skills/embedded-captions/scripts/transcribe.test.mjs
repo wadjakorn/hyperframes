@@ -57,6 +57,36 @@ test("applySubstitutions: regex with flags, and no-op on empty list", () => {
   assert.deepEqual(noop.words, words);
 });
 
+test("applySubstitutions: regex without explicit flags is case-insensitive (default gi)", () => {
+  // Mirrors the shipped _example { from: "harder", to: "Herdr", regex: true } —
+  // it must catch ASR casing variants without the user passing flags.
+  const words = [
+    { text: "harder", start: 0, end: 1 },
+    { text: "Harder", start: 1, end: 2 },
+    { text: "HARDER", start: 2, end: 3 },
+  ];
+  const r = t.applySubstitutions(words, [{ from: "harder", to: "Herdr", regex: true }]);
+  assert.deepEqual(
+    r.words.map((w) => w.text),
+    ["Herdr", "Herdr", "Herdr"],
+  );
+  assert.equal(r.count, 3);
+});
+
+test("applySubstitutions: explicit flags still override the default", () => {
+  // A user who wants case-sensitivity passes flags: "g" and gets it.
+  const words = [
+    { text: "harder", start: 0, end: 1 },
+    { text: "Harder", start: 1, end: 2 },
+  ];
+  const r = t.applySubstitutions(words, [{ from: "harder", to: "Herdr", regex: true, flags: "g" }]);
+  assert.deepEqual(
+    r.words.map((w) => w.text),
+    ["Herdr", "Harder"],
+  );
+  assert.equal(r.count, 1);
+});
+
 test("applySubstitutions: a malformed regex is skipped, not fatal", () => {
   const r = t.applySubstitutions(
     [{ text: "x", start: 0, end: 1 }],

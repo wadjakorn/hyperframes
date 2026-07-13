@@ -112,7 +112,9 @@ function buildInitialPrompt(hotwords) {
 }
 
 function _compileSub(s) {
-  const flags = typeof s.flags === "string" ? s.flags : s.regex ? "g" : "gi";
+  // Default to "gi" for both literal and regex subs — ASR casing varies
+  // ("Harder"/"HARDER"), and the stub/_example document "gi" as the default.
+  const flags = typeof s.flags === "string" ? s.flags : "gi";
   const source = s.regex ? s.from : s.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   try {
     return { re: new RegExp(source, flags), to: s.to };
