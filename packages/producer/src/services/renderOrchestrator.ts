@@ -44,7 +44,13 @@ import {
   appendFileSync,
 } from "fs";
 import { parseHTML } from "linkedom";
-import { type CanvasResolution, type Fps, type FpsInput, toFps } from "@hyperframes/core";
+import {
+  type CanvasResolution,
+  type Fps,
+  type FpsInput,
+  toFps,
+  readProjectMediaRoots,
+} from "@hyperframes/core";
 import {
   type EngineConfig,
   resolveConfig,
@@ -1545,6 +1551,7 @@ export async function executeRenderJob(
           port: 0,
           preHeadScripts: [VIRTUAL_TIME_SHIM],
           fps: job.config.fps,
+          mediaRoots: readProjectMediaRoots(projectDir),
         });
         assertNotAborted();
         observability.stageEnd("file_server", fileServerStart);

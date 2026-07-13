@@ -15,6 +15,7 @@ import {
   loadRuntimeSource,
   loadRuntimeSourceSignature,
 } from "./runtimeSource.js";
+import { readProjectMediaRoots } from "@hyperframes/core";
 import { VERSION as version } from "../version.js";
 import { buildStudioHeadScripts, resolveCliTelemetryDistinctId } from "./telemetryIdentity.js";
 import { emitStudioRenderComplete, emitStudioRenderError } from "./studioRenderTelemetry.js";
@@ -284,6 +285,19 @@ function rewriteWrittenToHostViewport(projectDir: string, written: string[]): vo
   }
 }
 
+// External media mounts (`external/<mount>/…`) serve on a loopback bind by
+// default. When the preview is exposed to a non-loopback host
+// (HYPERFRAMES_PREVIEW_HOST=0.0.0.0), serving allowlisted external dirs to the
+// network is refused unless the operator explicitly opts in — the studio API is
+// unauthenticated, so this keeps the exposure to project-dir files by default.
+function isLoopbackHost(host: string): boolean {
+  return host === "" || host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+function previewExternalMediaAllowed(): boolean {
+  if (isLoopbackHost((process.env.HYPERFRAMES_PREVIEW_HOST ?? "").trim())) return true;
+  return process.env.HYPERFRAMES_ALLOW_EXTERNAL_EXPOSED === "1";
+}
+
 export function createStudioServer(options: StudioServerOptions): StudioServer {
   const { projectDir, projectName } = options;
   const projectId = projectName || basename(projectDir);
@@ -293,7 +307,12 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
 
   // ── CLI adapter for the shared studio API ──────────────────────────────
 
-  const project: ResolvedProject = { id: projectId, dir: projectDir, title: projectId };
+  const project: ResolvedProject = {
+    id: projectId,
+    dir: projectDir,
+    title: projectId,
+    mediaRoots: readProjectMediaRoots(projectDir),
+  };
   let cachedProjectSignature: string | null = null;
   watcher.addListener(() => {
     cachedProjectSignature = null;
@@ -357,6 +376,8 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
     },
 
     runtimeUrl: "/api/runtime.js",
+
+    externalMediaEnabled: previewExternalMediaAllowed(),
 
     rendersDir: () => join(projectDir, "renders"),
 

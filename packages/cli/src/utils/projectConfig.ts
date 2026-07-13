@@ -29,6 +29,15 @@ export interface ProjectConfig {
   registry: string;
   /** Target paths for each item type. */
   paths: ProjectConfigPaths;
+  /**
+   * Named roots for media that lives OUTSIDE the project directory, keyed by a
+   * mount name (`[A-Za-z0-9_-]+`). A composition references them as
+   * `external/<mount>/<path>` so large sources don't have to be copied in.
+   * Relative values resolve against the project dir. The preview/render file
+   * servers read these via core's `readProjectMediaRoots`; see that module for
+   * the resolution + containment rules.
+   */
+  mediaRoots?: Record<string, string>;
 }
 
 export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
@@ -72,6 +81,9 @@ export function normalizeConfig(partial: Partial<ProjectConfig>): ProjectConfig 
       components: partial.paths?.components ?? DEFAULT_PROJECT_CONFIG.paths.components,
       assets: partial.paths?.assets ?? DEFAULT_PROJECT_CONFIG.paths.assets,
     },
+    // Passed through untouched; the file servers validate + resolve it via
+    // core's normalizeMediaRoots, so the single authority stays in one place.
+    ...(partial.mediaRoots ? { mediaRoots: partial.mediaRoots } : {}),
   };
 }
 
