@@ -181,7 +181,7 @@ const WX_HINTS = {
   "uv-missing":
     "install uv (astral.sh) so `uvx whisperx` resolves: curl -LsSf https://astral.sh/uv/install.sh | sh",
   "torchcodec-ffmpeg":
-    "whisperx torchcodec supports ffmpeg 4–7; this box is newer. Provide an older ffmpeg for the venv, or accept the whisper.cpp fallback.",
+    "whisperx's pinned torchcodec supports ffmpeg 4–7; this box is newer. Build scripts/whisperx.Dockerfile (carries its own ffmpeg + baked models) and set TRANSCRIBE_WHISPERX_DOCKER=<image>, or provide an older ffmpeg via LD_LIBRARY_PATH, or accept the whisper.cpp fallback.",
   "hf-download-hang":
     "HF model download failed/timed out (often an IPv6-blackholed CDN). Force IPv4 or set HF_ENDPOINT to a mirror, then retry.",
   other: "see the whisperx stderr above.",
@@ -220,6 +220,26 @@ function ffmpegMajor() {
 // decode-mismatch that pushes this box to the whisper.cpp fallback.
 function isTorchcodecFfmpegMismatch(major) {
   return typeof major === "number" && major > 7;
+}
+
+// Build the runner command for the whisperx CLI args `cliArgs`. Two backends:
+//  • docker (opts.dockerImage set) — a baked image carrying its own ffmpeg, so
+//    the host ffmpeg 8 vs torchcodec mismatch is sidestepped. The project dir is
+//    bind-mounted at its OWN absolute path (so the wav/output_dir paths in
+//    cliArgs resolve unchanged inside the container), run as the host uid/gid so
+//    outputs aren't root-owned, with select HF_* env forwarded.
+//  • uvx (default) — an ephemeral host venv pinned to `whisperxSpec`.
+// Pure (no spawn) so the arg wiring is unit-testable. Extracted for tests.
+function buildWhisperxCommand(cliArgs, opts) {
+  const { dockerImage, project, whisperxSpec, env = {}, uid, gid } = opts;
+  if (dockerImage) {
+    const args = ["run", "--rm", "-v", `${project}:${project}`, "-w", project];
+    if (typeof uid === "number") args.push("--user", `${uid}:${gid}`);
+    for (const k of ["HF_ENDPOINT", "HF_HUB_OFFLINE", "HF_HUB_DOWNLOAD_TIMEOUT"])
+      if (env[k]) args.push("-e", `${k}=${env[k]}`);
+    return { cmd: "docker", args: [...args, dockerImage, ...cliArgs] };
+  }
+  return { cmd: "uvx", args: ["--python", "3.12", "--from", whisperxSpec, "whisperx", ...cliArgs] };
 }
 
 // Mean loudness of the audio, for the no-speech guard below. Silence → whisper
@@ -361,12 +381,9 @@ function main() {
       // "latest" on every run (a supply-chain + determinism foot-gun). Override
       // with $WHISPERX_VERSION if you've validated a different release.
       const whisperxSpec = `whisperx==${process.env.WHISPERX_VERSION || "3.8.6"}`;
-      const wxArgs = [
-        "--python",
-        "3.12",
-        "--from",
-        whisperxSpec,
-        "whisperx",
+      // whisperx CLI args (everything after the `whisperx` entrypoint) — shared by
+      // the uvx and docker runners below.
+      const wxCliArgs = [
         wav,
         "--model",
         wxModel,
@@ -382,24 +399,45 @@ function main() {
         "--print_progress",
         "False",
       ];
-      if (language) wxArgs.push("--language", language);
-      if (initialPrompt) wxArgs.push("--initial_prompt", initialPrompt);
+      if (language) wxCliArgs.push("--language", language);
+      if (initialPrompt) wxCliArgs.push("--initial_prompt", initialPrompt);
 
       // Preflight: warn up front on the known ffmpeg-major mismatch, and cap the
       // HF download timeout so an IPv6-blackholed model CDN fails fast (and we
       // classify + fall back) instead of hanging the whole 600s subprocess.
-      const fmaj = ffmpegMajor();
-      if (isTorchcodecFfmpegMismatch(fmaj))
-        console.error(`[transcribe] ⚠ ffmpeg ${fmaj} > 7 — ${WX_HINTS["torchcodec-ffmpeg"]}`);
       const wxEnv = { ...process.env };
       if (!wxEnv.HF_HUB_DOWNLOAD_TIMEOUT) wxEnv.HF_HUB_DOWNLOAD_TIMEOUT = "30";
-      const wxRun = (a) =>
-        cp.spawnSync("uvx", a, { encoding: "utf8", timeout: 600000, env: wxEnv });
+
+      // Runner: a baked docker image (host ffmpeg untouched — see
+      // whisperx.Dockerfile) when TRANSCRIBE_WHISPERX_DOCKER names one; else uvx
+      // (ephemeral host venv). Docker mounts the project at its OWN absolute path
+      // so wav/output_dir paths need no rewriting, and runs as the host user so
+      // outputs aren't root-owned.
+      const dockerImage = process.env.TRANSCRIBE_WHISPERX_DOCKER;
+      const fmaj = ffmpegMajor();
+      if (dockerImage)
+        console.error(
+          `[transcribe] whisperx via docker ${dockerImage} — host ffmpeg ${fmaj ?? "?"} bypassed`,
+        );
+      else if (isTorchcodecFfmpegMismatch(fmaj))
+        console.error(`[transcribe] ⚠ ffmpeg ${fmaj} > 7 — ${WX_HINTS["torchcodec-ffmpeg"]}`);
+
+      const wxRun = (a) => {
+        const { cmd, args } = buildWhisperxCommand(a, {
+          dockerImage,
+          project,
+          whisperxSpec,
+          env: wxEnv,
+          uid: process.getuid ? process.getuid() : undefined,
+          gid: process.getgid ? process.getgid() : undefined,
+        });
+        return cp.spawnSync(cmd, args, { encoding: "utf8", timeout: 600000, env: wxEnv });
+      };
 
       // strip our flag if this whisperx build doesn't know it
-      let r = wxRun(wxArgs);
+      let r = wxRun(wxCliArgs);
       if ((r.status || 0) !== 0 && /no_align_deletes/.test(r.stderr || ""))
-        r = wxRun(wxArgs.filter((a) => a !== "--no_align_deletes"));
+        r = wxRun(wxCliArgs.filter((a) => a !== "--no_align_deletes"));
       if ((r.status || 0) !== 0) {
         // spawn failures (uvx missing) surface as r.error, not stderr — keep both
         // so classifyWhisperxError can tell uv-missing from a torchcodec/HF failure.
@@ -532,6 +570,7 @@ module.exports = {
   classifyWhisperxError,
   parseFfmpegMajor,
   isTorchcodecFfmpegMismatch,
+  buildWhisperxCommand,
   WX_HINTS,
   SUBS_FILE,
 };
