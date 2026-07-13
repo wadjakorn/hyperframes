@@ -135,6 +135,91 @@ function applySubstitutions(words, substitutions) {
   });
   return { words: out, count };
 }
+
+// ── WhisperX JSON → words (extracted for tests) ──────────────────────────────
+// Flatten whisperx's {segments:[{words:[{word,start,end}]}]} into our flat word
+// array. Alignment occasionally emits a word with null start/end (OOV, numbers) —
+// left null here, filled by interpolateMissingTimings.
+function parseWhisperxWords(wxJson) {
+  const wx = [];
+  for (const seg of (wxJson && wxJson.segments) || [])
+    for (const w of seg.words || [])
+      wx.push({ text: String(w.word || "").trim(), start: w.start, end: w.end, type: "word" });
+  return wx;
+}
+
+// Fill missing timings from neighbors: a null word borrows the previous word's end
+// as its start and stops just before the next timed word (or +0.3s if it's last).
+function interpolateMissingTimings(wx) {
+  for (let i = 0; i < wx.length; i++) {
+    if (wx[i].start == null || wx[i].end == null) {
+      const prevEnd = i > 0 ? wx[i - 1].end : 0;
+      const nextStart = wx.slice(i + 1).find((x) => x.start != null);
+      const ns = nextStart ? nextStart.start : prevEnd + 0.3;
+      wx[i].start = prevEnd;
+      wx[i].end = Math.max(prevEnd + 0.05, ns - 0.02);
+    }
+  }
+  return wx;
+}
+
+// Drop words whisper fabricated inside a terminal silence. `audible` is
+// audibleEnd()'s {speechEnd,total}; a word whose START is past the audible end
+// (+0.4s slack) is a hallucination. No-op unless there's a real silent tail.
+function trimHallucinatedTail(words, audible) {
+  if (!audible || !(audible.speechEnd < audible.total - 0.8)) return { words, trimmed: 0 };
+  const keep = words.filter((w) => w.start <= audible.speechEnd + 0.4);
+  return { words: keep, trimmed: words.length - keep.length };
+}
+
+// ── WhisperX failure classification + ffmpeg preflight (extracted for tests) ──
+// Why did whisperx fail? So the whisper.cpp fallback is never SILENT on a box
+// that could run whisperx if its env were fixed. Buckets map to WX_HINTS below.
+const WX_HINTS = {
+  "uv-missing":
+    "install uv (astral.sh) so `uvx whisperx` resolves: curl -LsSf https://astral.sh/uv/install.sh | sh",
+  "torchcodec-ffmpeg":
+    "whisperx torchcodec supports ffmpeg 4–7; this box is newer. Provide an older ffmpeg for the venv, or accept the whisper.cpp fallback.",
+  "hf-download-hang":
+    "HF model download failed/timed out (often an IPv6-blackholed CDN). Force IPv4 or set HF_ENDPOINT to a mirror, then retry.",
+  other: "see the whisperx stderr above.",
+};
+
+function classifyWhisperxError(text) {
+  const s = String(text || "").toLowerCase();
+  if (/enoent|not found|no such file|no module named ['"]?whisperx|failed to spawn/.test(s))
+    return "uv-missing";
+  if (/torchcodec|libavutil|libav\w*\.so|ffmpeg/.test(s)) return "torchcodec-ffmpeg";
+  if (
+    /timed out|timeout|connectionerror|max retries|read timed out|failed to (connect|download)|huggingface|hf-mirror|couldn't connect/.test(
+      s,
+    )
+  )
+    return "hf-download-hang";
+  return "other";
+}
+
+// ffmpeg major from `ffmpeg -version` first line: "ffmpeg version 8.0" / "n8.0" /
+// "6.1.1-3ubuntu5" → 8/8/6. Git builds ("N-xxxxx") have no numeric major → null.
+function parseFfmpegMajor(versionOutput) {
+  const m = String(versionOutput || "").match(/ffmpeg version n?(\d+)\./i);
+  return m ? Number(m[1]) : null;
+}
+
+function ffmpegMajor() {
+  try {
+    return parseFfmpegMajor(cp.execFileSync("ffmpeg", ["-version"], { encoding: "utf8" }));
+  } catch {
+    return null;
+  }
+}
+
+// whisperx 3.8.6's torchcodec targets ffmpeg 4–7; a newer major (≥8) is the known
+// decode-mismatch that pushes this box to the whisper.cpp fallback.
+function isTorchcodecFfmpegMismatch(major) {
+  return typeof major === "number" && major > 7;
+}
+
 // Mean loudness of the audio, for the no-speech guard below. Silence → whisper
 // hallucinates (famously "Thank you."), and the decision gate refuses "no speech".
 function meanVolumeDb(audio) {
@@ -297,36 +382,34 @@ function main() {
       ];
       if (language) wxArgs.push("--language", language);
       if (initialPrompt) wxArgs.push("--initial_prompt", initialPrompt);
+
+      // Preflight: warn up front on the known ffmpeg-major mismatch, and cap the
+      // HF download timeout so an IPv6-blackholed model CDN fails fast (and we
+      // classify + fall back) instead of hanging the whole 600s subprocess.
+      const fmaj = ffmpegMajor();
+      if (isTorchcodecFfmpegMismatch(fmaj))
+        console.error(`[transcribe] ⚠ ffmpeg ${fmaj} > 7 — ${WX_HINTS["torchcodec-ffmpeg"]}`);
+      const wxEnv = { ...process.env };
+      if (!wxEnv.HF_HUB_DOWNLOAD_TIMEOUT) wxEnv.HF_HUB_DOWNLOAD_TIMEOUT = "30";
+      const wxRun = (a) =>
+        cp.spawnSync("uvx", a, { encoding: "utf8", timeout: 600000, env: wxEnv });
+
       // strip our flag if this whisperx build doesn't know it
-      let r = cp.spawnSync("uvx", wxArgs, { encoding: "utf8", timeout: 600000 });
-      if ((r.status || 0) !== 0 && /no_align_deletes/.test(r.stderr || "")) {
-        r = cp.spawnSync(
-          "uvx",
-          wxArgs.filter((a) => a !== "--no_align_deletes"),
-          { encoding: "utf8", timeout: 600000 },
-        );
-      }
-      if ((r.status || 0) !== 0)
+      let r = wxRun(wxArgs);
+      if ((r.status || 0) !== 0 && /no_align_deletes/.test(r.stderr || ""))
+        r = wxRun(wxArgs.filter((a) => a !== "--no_align_deletes"));
+      if ((r.status || 0) !== 0) {
+        // spawn failures (uvx missing) surface as r.error, not stderr — keep both
+        // so classifyWhisperxError can tell uv-missing from a torchcodec/HF failure.
+        const detail = [r.error && (r.error.code || r.error.message), r.stderr]
+          .filter(Boolean)
+          .join(" ");
         throw new Error(
-          (r.stderr || "whisperx failed").split("\n").slice(-4).join(" ").slice(0, 300),
+          (detail || "whisperx failed").split("\n").slice(-4).join(" ").slice(0, 300),
         );
-      const wxJson = JSON.parse(fs.readFileSync(path.join(outDir, "_wx_audio.json"), "utf8"));
-      const wx = [];
-      for (const seg of wxJson.segments || [])
-        for (const w of seg.words || []) {
-          // alignment occasionally yields a word with no timing (OOV) — interpolate from neighbors later; mark null now
-          wx.push({ text: String(w.word || "").trim(), start: w.start, end: w.end, type: "word" });
-        }
-      // interpolate missing timings from neighbors (rare OOV/number cases)
-      for (let i = 0; i < wx.length; i++) {
-        if (wx[i].start == null || wx[i].end == null) {
-          const prevEnd = i > 0 ? wx[i - 1].end : 0;
-          const nextStart = wx.slice(i + 1).find((x) => x.start != null);
-          const ns = nextStart ? nextStart.start : prevEnd + 0.3;
-          wx[i].start = prevEnd;
-          wx[i].end = Math.max(prevEnd + 0.05, ns - 0.02);
-        }
       }
+      const wxJson = JSON.parse(fs.readFileSync(path.join(outDir, "_wx_audio.json"), "utf8"));
+      const wx = interpolateMissingTimings(parseWhisperxWords(wxJson));
       if (wx.length) {
         words = wx.filter((w) => w.text);
         engine = `whisperx(${wxModel}+wav2vec2)`;
@@ -335,9 +418,11 @@ function main() {
         fs.unlinkSync(wav);
       } catch {}
     } catch (e) {
+      const cls = classifyWhisperxError(e && (e.message || e));
       console.error(
-        `[transcribe] whisperx unavailable (${String(e.message || e).slice(0, 160)}) — falling back to whisper.cpp`,
+        `[transcribe] whisperx unavailable [${cls}] (${String(e.message || e).slice(0, 160)}) — falling back to whisper.cpp`,
       );
+      console.error(`[transcribe]   → ${WX_HINTS[cls]}`);
     }
   }
 
@@ -383,17 +468,14 @@ function main() {
   // silence (it fabricates e.g. repeated "I'm sorry." over dead air). Word START past
   // the audible end (+0.4s slack) = fabricated; real final words start before it.
   const ae = audibleEnd(audio);
-  let trimmedTail = 0;
-  if (ae && ae.speechEnd < ae.total - 0.8) {
-    const keep = words.filter((w) => w.start <= ae.speechEnd + 0.4);
-    trimmedTail = words.length - keep.length;
-    if (trimmedTail > 0) {
-      console.error(
-        `[transcribe] ⚠ trimmed ${trimmedTail} trailing word(s) starting after the audible end ` +
-          `(${ae.speechEnd.toFixed(2)}s; clip ${ae.total.toFixed(2)}s) — whisper hallucinates over silent tails.`,
-      );
-      words = keep;
-    }
+  const tail = trimHallucinatedTail(words, ae);
+  const trimmedTail = tail.trimmed;
+  if (trimmedTail > 0) {
+    console.error(
+      `[transcribe] ⚠ trimmed ${trimmedTail} trailing word(s) starting after the audible end ` +
+        `(${ae.speechEnd.toFixed(2)}s; clip ${ae.total.toFixed(2)}s) — whisper hallucinates over silent tails.`,
+    );
+    words = tail.words;
   }
 
   const text = words
@@ -436,12 +518,19 @@ function main() {
   }
 }
 
-// Exported for tests (see follow-up ticket); only auto-run as a CLI.
+// Exported for tests; only auto-run as a CLI.
 module.exports = {
   loadCaptionsConfig,
   ensureSubsTemplate,
   buildInitialPrompt,
   applySubstitutions,
+  parseWhisperxWords,
+  interpolateMissingTimings,
+  trimHallucinatedTail,
+  classifyWhisperxError,
+  parseFfmpegMajor,
+  isTorchcodecFfmpegMismatch,
+  WX_HINTS,
   SUBS_FILE,
 };
 
