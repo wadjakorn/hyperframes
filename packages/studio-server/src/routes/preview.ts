@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { injectScriptsIntoHtml, stripEmbeddedRuntimeScripts } from "@hyperframes/core/compiler";
 import type { StudioApiAdapter } from "../types.js";
-import { resolveWithinProject } from "../helpers/safePath.js";
+import { resolveWithinProject, resolveMediaMount } from "../helpers/safePath.js";
 import { getMimeType } from "../helpers/mime.js";
 import { buildSubCompositionHtml } from "../helpers/subComposition.js";
 import { createProjectSignature } from "../helpers/projectSignature.js";
@@ -394,7 +394,15 @@ export function registerPreviewRoutes(api: Hono, adapter: StudioApiAdapter): voi
     const subPath = decodeURIComponent(
       c.req.path.replace(`/projects/${project.id}/preview/`, "").split("?")[0] ?? "",
     );
-    const file = resolveWithinProject(project.dir, subPath);
+    // `external/<mount>/<path>` resolves against an allowlisted media root outside
+    // the project dir (large sources kept in place, not copied in). Gated by
+    // adapter.externalMediaEnabled so LAN-exposed servers don't serve them by
+    // default. Everything else stays contained to the project dir.
+    const file = subPath.startsWith("external/")
+      ? adapter.externalMediaEnabled
+        ? resolveMediaMount(project.mediaRoots, subPath)
+        : null
+      : resolveWithinProject(project.dir, subPath);
     if (!file) {
       return c.text("not found", 404);
     }

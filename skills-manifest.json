@@ -2,8 +2,8 @@
   "source": "heygen-com/hyperframes",
   "skills": {
     "embedded-captions": {
-      "hash": "d870992d206c9ddc",
-      "files": 144
+      "hash": "1ca4ea66fb7bc82c",
+      "files": 145
     },
     "faceless-explainer": {
       "hash": "58b1901b8ef7a84e",
@@ -26,11 +26,11 @@
       "files": 116
     },
     "hyperframes-cli": {
-      "hash": "493e59cafaab3d10",
+      "hash": "5628e79b22c70909",
       "files": 7
     },
     "hyperframes-core": {
-      "hash": "788462fc5c3b9ee1",
+      "hash": "b98b0875f57e5195",
       "files": 13
     },
     "hyperframes-creative": {

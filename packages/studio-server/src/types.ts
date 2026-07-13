@@ -7,6 +7,13 @@ export interface ResolvedProject {
   dir: string;
   title?: string;
   sessionId?: string;
+  /**
+   * External media mounts declared in the project's hyperframes.json, keyed by
+   * mount name → absolute root. Compositions reference them as
+   * `external/<mount>/<path>`; the preview static handler resolves through
+   * core's `resolveMediaMount`. Absent/empty → no external media.
+   */
+  mediaRoots?: Record<string, string>;
 }
 
 /** Observable render job state, polled by the SSE progress handler. */
@@ -112,6 +119,15 @@ export interface StudioApiAdapter {
 
   /** URL to the hyperframe runtime JS (injected into preview HTML). */
   runtimeUrl: string;
+
+  /**
+   * Whether the preview static handler may serve a project's external media
+   * mounts (`ResolvedProject.mediaRoots`). Defaults to off when omitted. The
+   * CLI host sets this false when the server is bound to a non-loopback host
+   * (LAN exposure) unless explicitly opted in, so allowlisted external dirs
+   * aren't handed to the network by default.
+   */
+  externalMediaEnabled?: boolean;
 
   /**
    * Optional: post-process preview HTML before Studio augments it.

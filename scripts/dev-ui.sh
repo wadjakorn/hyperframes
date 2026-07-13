@@ -307,7 +307,180 @@ cmd_create() {
   fi
 }
 
+# ── doctor: one-command bootstrap for a fresh dev box ────────────────────────
+# Fixes the exact env friction contributing here hits on a clean machine:
+#   1. bun not on PATH        → symlink ~/.bun/bin/{bun,bunx} into ~/.local/bin
+#   2. git identity unset     → set from env (blocks commits otherwise)
+#   3. whisper models missing → report (or prefetch with --prefetch; models are big)
+# Idempotent: re-running on a ready box reports "ok" and changes nothing.
+#
+#   ./scripts/dev-ui.sh doctor              # check + apply cheap fixes, report the rest
+#   ./scripts/dev-ui.sh doctor --prefetch   # also download missing whisper models
+#   ./scripts/dev-ui.sh doctor --json       # machine-readable (for the web UI)
+#
+# Env: WHISPER_PREFETCH_MODELS (default "small"), DEVUI_GIT_NAME / DEVUI_GIT_EMAIL
+# (falls back to GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL) for the git-identity fix.
+
+WHISPER_CACHE="$HOME/.cache/hyperframes/whisper"
+WHISPER_MODELS_DIR="$WHISPER_CACHE/models"
+LOCAL_BIN="$HOME/.local/bin"
+
+DOC_ROWS=()  # each entry: "<ok:true|false>\x1f<name>\x1f<detail>\x1f<hint>"
+add_row() { DOC_ROWS+=("$1"$'\x1f'"$2"$'\x1f'"$3"$'\x1f'"${4:-}"); }
+
+on_path() { # <dir> -> 0 if dir is on PATH
+  case ":$PATH:" in *":$1:"*) return 0 ;; *) return 1 ;; esac
+}
+
+download_model() { # <url> <dest> -> 0 on success (curl or wget, resumable)
+  local url="$1" dest="$2" tmp="$2.partial"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fL --retry 3 -C - -o "$tmp" "$url" && mv -f "$tmp" "$dest"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -c -O "$tmp" "$url" && mv -f "$tmp" "$dest"
+  else
+    return 1
+  fi
+}
+
+check_bun() {
+  local src="" b
+  for b in "$HOME/.bun/bin/bun" "$(command -v bun 2>/dev/null || true)"; do
+    [ -n "$b" ] && [ -x "$b" ] && { src="$b"; break; }
+  done
+  if [ -z "$src" ]; then
+    add_row false bun "not installed" "curl -fsSL https://bun.sh/install | bash"; return
+  fi
+  mkdir -p "$LOCAL_BIN"
+  local bunx_src="${src%/bun}/bunx"
+  ln -sf "$src" "$LOCAL_BIN/bun"
+  [ -x "$bunx_src" ] && ln -sf "$bunx_src" "$LOCAL_BIN/bunx"
+  if on_path "$LOCAL_BIN"; then
+    add_row true bun "linked → $LOCAL_BIN/bun (on PATH)"
+  else
+    add_row false bun "linked → $LOCAL_BIN/bun, but $LOCAL_BIN not on PATH" \
+      "add to your shell rc: export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
+}
+
+check_git_identity() {
+  local name email
+  name="$(git config user.name 2>/dev/null || true)"
+  email="$(git config user.email 2>/dev/null || true)"
+  if [ -n "$name" ] && [ -n "$email" ]; then
+    add_row true git-identity "$name <$email>"; return
+  fi
+  local wn="${DEVUI_GIT_NAME:-${GIT_AUTHOR_NAME:-}}"
+  local we="${DEVUI_GIT_EMAIL:-${GIT_AUTHOR_EMAIL:-}}"
+  if [ -n "$wn" ] && [ -n "$we" ]; then
+    git config user.name "$wn"; git config user.email "$we"
+    add_row true git-identity "set (repo-local) → $wn <$we>"
+  else
+    add_row false git-identity "unset — commits will be rejected" \
+      "git config user.name 'You'; git config user.email 'you@example.com' (or set DEVUI_GIT_NAME/DEVUI_GIT_EMAIL and re-run)"
+  fi
+}
+
+check_whisper_bin() {
+  local b
+  for b in "$WHISPER_CACHE/whisper.cpp/build/bin/whisper-cli" \
+           "$WHISPER_CACHE/whisper.cpp/build/whisper-cli" \
+           "$(command -v whisper-cli 2>/dev/null || true)"; do
+    [ -n "$b" ] && [ -x "$b" ] && { add_row true whisper-cpp "$b"; return; }
+  done
+  add_row false whisper-cpp "not built (optional — built on first transcribe)" \
+    "runs automatically via: node $CLI transcribe <audio> (needs git + cmake)"
+}
+
+check_whisper_models() { # <prefetch:0|1>
+  local prefetch="$1" models m dest url
+  models="${WHISPER_PREFETCH_MODELS:-small}"
+  mkdir -p "$WHISPER_MODELS_DIR"
+  for m in $models; do
+    dest="$WHISPER_MODELS_DIR/ggml-$m.bin"
+    url="https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$m.bin"
+    if [ -f "$dest" ]; then
+      add_row true "whisper:$m" "present ($(du -h "$dest" | cut -f1))"
+    elif [ "$prefetch" = 1 ]; then
+      echo "  ↓ downloading whisper model '$m' …" >&2
+      if download_model "$url" "$dest"; then
+        add_row true "whisper:$m" "downloaded ($(du -h "$dest" | cut -f1))"
+      else
+        add_row false "whisper:$m" "download failed" "check network, retry: dev-ui.sh doctor --prefetch"
+      fi
+    else
+      add_row false "whisper:$m" "missing" "prefetch with: dev-ui.sh doctor --prefetch"
+    fi
+  done
+}
+
+check_repo_build() {
+  [ -d "$REPO_ROOT/node_modules" ] \
+    && add_row true deps "node_modules present" \
+    || add_row false deps "not installed" "bun install"
+  [ -f "$CLI" ] \
+    && add_row true cli "built ($CLI)" \
+    || add_row false cli "not built" "bun run build"
+}
+
+json_esc() { # escape a string for a JSON value (backslash, quote, tab)
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g'
+}
+
+emit_doctor_json() {
+  local first=1 row ok name detail hint
+  printf '{"checks":['
+  for row in "${DOC_ROWS[@]}"; do
+    IFS=$'\x1f' read -r ok name detail hint <<<"$row"
+    [ "$first" = 1 ] || printf ','; first=0
+    printf '{"name":"%s","ok":%s,"detail":"%s"' "$(json_esc "$name")" "$ok" "$(json_esc "$detail")"
+    [ -n "$hint" ] && printf ',"hint":"%s"' "$(json_esc "$hint")"
+    printf '}'
+  done
+  printf '],"ok":%s}\n' "$DOC_ALL_OK"
+}
+
+emit_doctor_table() {
+  local row ok name detail hint icon
+  printf "\n%s\n\n" "dev-ui doctor"
+  for row in "${DOC_ROWS[@]}"; do
+    IFS=$'\x1f' read -r ok name detail hint <<<"$row"
+    [ "$ok" = true ] && icon="✓" || icon="✗"
+    printf "  %s %-14s %s\n" "$icon" "$name" "$detail"
+    [ "$ok" != true ] && [ -n "$hint" ] && printf "  %17s%s\n" "" "→ $hint"
+  done
+  printf "\n  %s\n\n" "$([ "$DOC_ALL_OK" = true ] && echo "◇ all checks passed" || echo "◇ some checks need attention — see hints above")"
+}
+
+cmd_doctor() {
+  local json=0 prefetch=0 a
+  for a in "$@"; do
+    case "$a" in
+      --json) json=1 ;;
+      --prefetch|--all) prefetch=1 ;;
+    esac
+  done
+  DOC_ROWS=()
+  check_repo_build
+  check_bun
+  check_git_identity
+  check_whisper_bin
+  check_whisper_models "$prefetch"
+
+  DOC_ALL_OK=true
+  local row ok rest
+  for row in "${DOC_ROWS[@]}"; do
+    IFS=$'\x1f' read -r ok rest <<<"$row"
+    [ "$ok" = true ] || DOC_ALL_OK=false
+  done
+
+  # Exit 0 regardless of env health (like `hyperframes doctor`): the JSON `ok`
+  # field / table footer convey health so a web button stays green.
+  [ "$json" = 1 ] && emit_doctor_json || emit_doctor_table
+}
+
 case "${1:-}" in
+  doctor)  shift || true; cmd_doctor "$@" ;;
   start)   cmd_status >/dev/null; start_preview "${2:-$PROJECT}" ;;
   projects) shift || true; cmd_projects "${1:-}" ;;
   create)  shift || true; cmd_create "$@" ;;
@@ -318,7 +491,7 @@ case "${1:-}" in
   restart) cmd_restart "${2:-}" ;;
   logs)    cmd_logs "${2:-}" ;;
   *)
-    echo "usage: $0 {start [PROJECT]|studio|up [PROJECT]|status [--json]|stop <port|project|all>|restart <t>|logs <t>|projects [--json]|create <name> [--example E] [--resolution R]}"
+    echo "usage: $0 {doctor [--prefetch] [--json]|start [PROJECT]|studio|up [PROJECT]|status [--json]|stop <port|project|all>|restart <t>|logs <t>|projects [--json]|create <name> [--example E] [--resolution R]}"
     echo "  env: PROJECT, EXPOSE=1, PREVIEW_PORT (scan start), STUDIO_PORT (scan start)"
     exit 1
     ;;

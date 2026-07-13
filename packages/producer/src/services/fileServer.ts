@@ -16,7 +16,7 @@ import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { join, extname, resolve, sep } from "node:path";
 import { injectScriptsAtHeadStart, injectScriptsIntoHtml } from "@hyperframes/core/compiler";
-import { fpsToNumber, type Fps } from "@hyperframes/core";
+import { fpsToNumber, resolveMediaMount, MEDIA_MOUNT_PREFIX, type Fps } from "@hyperframes/core";
 import { getVerifiedHyperframeRuntimeSource } from "./hyperframeRuntimeLoader.js";
 import { getHfEarlyStub } from "../generated/hf-early-stub-inline.js";
 import { defaultLogger, type ProducerLogger } from "../logger.js";
@@ -667,6 +667,13 @@ export interface FileServerOptions {
   fps?: Fps;
   /** Strip embedded runtime scripts from HTML before injection. Default: true. */
   stripEmbeddedRuntime?: boolean;
+  /**
+   * External media mounts (`external/<name>/… → allowlisted absolute root`), for
+   * compositions that reference large sources living outside the project dir.
+   * Resolved via core's symlink-safe `resolveMediaMount`. Render capture binds
+   * loopback on an ephemeral port, so there's no exposure gate here.
+   */
+  mediaRoots?: Record<string, string>;
 }
 
 export interface FileServerHandle {
@@ -701,7 +708,7 @@ export function closeFileServerSafely(
 }
 
 export function createFileServer(options: FileServerOptions): Promise<FileServerHandle> {
-  const { projectDir, compiledDir, port = 0, stripEmbeddedRuntime = true } = options;
+  const { projectDir, compiledDir, port = 0, stripEmbeddedRuntime = true, mediaRoots } = options;
 
   // HF_EARLY_STUB must run before *any* page script so libraries that write
   // to window.__hf during page-script execution (e.g. shader-transitions
@@ -740,24 +747,34 @@ export function createFileServer(options: FileServerOptions): Promise<FileServer
     // be served straight off the filesystem. Keep this lexical so project
     // symlinks to sibling asset directories behave like preview mode.
     let filePath: string | null = null;
-    if (compiledDir) {
-      const candidate = join(compiledDir, relativePath);
-      if (
-        existsSync(candidate) &&
-        isPathInside(candidate, compiledDir) &&
-        statSync(candidate).isFile()
-      ) {
-        filePath = candidate;
+    // `external/<mount>/…` resolves against an allowlisted media root outside the
+    // project dir (symlink-safe via resolveMediaMount) — parity with preview, so
+    // a composition renders the same whether previewed or captured.
+    if (relativePath.startsWith(`${MEDIA_MOUNT_PREFIX}/`)) {
+      const external = resolveMediaMount(mediaRoots, relativePath);
+      if (external && existsSync(external) && statSync(external).isFile()) {
+        filePath = external;
       }
-    }
-    if (!filePath) {
-      const candidate = join(projectDir, relativePath);
-      if (
-        existsSync(candidate) &&
-        isPathInside(candidate, projectDir) &&
-        statSync(candidate).isFile()
-      ) {
-        filePath = candidate;
+    } else {
+      if (compiledDir) {
+        const candidate = join(compiledDir, relativePath);
+        if (
+          existsSync(candidate) &&
+          isPathInside(candidate, compiledDir) &&
+          statSync(candidate).isFile()
+        ) {
+          filePath = candidate;
+        }
+      }
+      if (!filePath) {
+        const candidate = join(projectDir, relativePath);
+        if (
+          existsSync(candidate) &&
+          isPathInside(candidate, projectDir) &&
+          statSync(candidate).isFile()
+        ) {
+          filePath = candidate;
+        }
       }
     }
 

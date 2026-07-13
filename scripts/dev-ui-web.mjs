@@ -278,6 +278,13 @@ async function postJobStop(req, res) {
   const b = await readBody(req);
   send(res, 200, { ok: stopJobById(String(b.id || "")) });
 }
+// env doctor: shells out to `dev-ui.sh doctor --json`. Check-only from the web
+// (cheap fixes: bun symlink, git identity); the heavy model prefetch stays a
+// terminal op (`dev-ui.sh doctor --prefetch`) so a request can't hang on a GB download.
+async function postDoctor(_req, res) {
+  const { stdout } = await runScript(["doctor", "--json"]);
+  send(res, 200, parseJson(stdout.trim()) ?? { ok: false, checks: [] });
+}
 // SSE: start an agent job in the project and stream its events to the browser
 const trimmed = (v) => String(v ?? "").trim();
 async function postAgent(req, res) {
@@ -334,6 +341,7 @@ const ROUTES = {
   "POST /api/create": postCreate,
   "POST /api/jobs/render": postRenderJob,
   "POST /api/jobs/stop": postJobStop,
+  "POST /api/doctor": postDoctor,
   "POST /api/agent": postAgent,
 };
 

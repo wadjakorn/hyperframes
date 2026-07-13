@@ -1,6 +1,6 @@
 ---
 name: hyperframes-cli
-description: HyperFrames CLI dev loop. Use when running npx hyperframes init, add, catalog, capture, lint, validate, inspect, layout, snapshot, preview, play, render, publish, feedback, lambda, doctor, browser, info, upgrade, skills, compositions, docs, benchmark, telemetry, transcribe, tts, or remove-background, or when troubleshooting the HyperFrames build/render environment. Entry point for AWS Lambda cloud rendering (`hyperframes lambda deploy / render / progress / destroy / policies / sites`).
+description: HyperFrames CLI dev loop. Use when running npx hyperframes init, add, catalog, capture, lint, validate, inspect, layout, snapshot, preview, play, render, publish, feedback, lambda, doctor, browser, info, upgrade, skills, compositions, docs, benchmark, telemetry, transcribe, tts, font freeze, or remove-background, or when troubleshooting the HyperFrames build/render environment. Entry point for AWS Lambda cloud rendering (`hyperframes lambda deploy / render / progress / destroy / policies / sites`).
 ---
 
 # HyperFrames CLI
@@ -43,14 +43,15 @@ Cross-cutting rules that hold for every command:
 
 ## Routing
 
-| Want to…                                                                                                   | Read                                  |
-| ---------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Scaffold a project (`init`, `capture`, `skills`)                                                           | `references/init-and-scaffold.md`     |
-| Check correctness (`lint`, `validate`, `inspect`, `snapshot`)                                              | `references/lint-validate-inspect.md` |
-| Preview or render (`preview`, `play`, `render`, `publish`)                                                 | `references/preview-render.md`        |
-| Diagnose the environment (`doctor`, `browser`)                                                             | `references/doctor-browser.md`        |
-| Cloud render on AWS Lambda (`lambda deploy / sites / render / progress / destroy / policies`)              | `references/lambda.md`                |
-| Everything else (`info`, `upgrade`, `compositions`, `docs`, `benchmark`, `telemetry`, asset preprocessing) | `references/upgrade-info-misc.md`     |
+| Want to…                                                                                                   | Read                                            |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Scaffold a project (`init`, `capture`, `skills`)                                                           | `references/init-and-scaffold.md`               |
+| Check correctness (`lint`, `validate`, `inspect`, `snapshot`)                                              | `references/lint-validate-inspect.md`           |
+| Preview or render (`preview`, `play`, `render`, `publish`)                                                 | `references/preview-render.md`                  |
+| Diagnose the environment (`doctor`, `browser`)                                                             | `references/doctor-browser.md`                  |
+| Freeze Google Fonts locally for deterministic renders (`font freeze`)                                      | run `hyperframes font freeze [dir] [--dry-run]` |
+| Cloud render on AWS Lambda (`lambda deploy / sites / render / progress / destroy / policies`)              | `references/lambda.md`                          |
+| Everything else (`info`, `upgrade`, `compositions`, `docs`, `benchmark`, `telemetry`, asset preprocessing) | `references/upgrade-info-misc.md`               |
 
 ## Cross-Skill Hand-Offs
 

@@ -532,4 +532,66 @@ describe("hf-id surfacing in preview route", () => {
     expect(disk).toMatch(/<div[^>]*data-hf-id/); // stage div stamped
     expect(disk).not.toMatch(/<li[^>]*data-hf-id/); // clone-source untouched
   });
+
+  describe("external media mounts (external/<mount>/…)", () => {
+    // A media root OUTSIDE the project dir, plus an adapter that mounts it.
+    function withExternalRoot(externalMediaEnabled: boolean): {
+      app: Hono;
+      extRoot: string;
+    } {
+      const projectDir = createProjectDir();
+      const extRoot = mkdtempSync(join(tmpdir(), "hf-extmedia-"));
+      tempDirs.push(extRoot);
+      writeFileSync(join(extRoot, "clip.mp4"), "FAKE-MP4-BYTES");
+      const app = new Hono();
+      registerPreviewRoutes(
+        app,
+        createAdapter(projectDir, {
+          externalMediaEnabled,
+          resolveProject: async (id: string) => ({
+            id,
+            dir: projectDir,
+            mediaRoots: { imported: extRoot },
+          }),
+        }),
+      );
+      return { app, extRoot };
+    }
+
+    it("serves a file from an allowlisted external mount when enabled", async () => {
+      const { app } = withExternalRoot(true);
+      const res = await app.request(
+        "http://localhost/projects/demo/preview/external/imported/clip.mp4",
+      );
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("FAKE-MP4-BYTES");
+      expect(res.headers.get("Accept-Ranges")).toBe("bytes");
+    });
+
+    it("refuses external media when disabled (LAN-exposure gate)", async () => {
+      const { app } = withExternalRoot(false);
+      const res = await app.request(
+        "http://localhost/projects/demo/preview/external/imported/clip.mp4",
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it("404s an unknown mount name", async () => {
+      const { app } = withExternalRoot(true);
+      const res = await app.request(
+        "http://localhost/projects/demo/preview/external/nope/clip.mp4",
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it("404s a traversal that escapes the mount root", async () => {
+      const { app, extRoot } = withExternalRoot(true);
+      // a secret sibling of the mount root must not be reachable via ../
+      writeFileSync(join(extRoot, "..", "secret.txt"), "TOP-SECRET");
+      const res = await app.request(
+        "http://localhost/projects/demo/preview/external/imported/..%2Fsecret.txt",
+      );
+      expect(res.status).toBe(404);
+    });
+  });
 });

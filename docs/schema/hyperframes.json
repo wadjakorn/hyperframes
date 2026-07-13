@@ -40,6 +40,12 @@
           "description": "Where asset files (images, fonts, videos) land. Defaults to `assets`."
         }
       }
+    },
+    "mediaRoots": {
+      "type": "object",
+      "description": "Named roots for media that lives OUTSIDE the project directory, so large sources (e.g. a multi-hundred-MB video) don't have to be copied/hardlinked in. A composition references a mount as `external/<name>/<path>` (e.g. `<video src=\"external/imported/ep1.mp4\">`). Relative values resolve against the project dir. The preview server serves external media on a loopback bind by default; when exposed to a non-loopback host it is refused unless `HYPERFRAMES_ALLOW_EXTERNAL_EXPOSED=1`.",
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" }
     }
   }
 }

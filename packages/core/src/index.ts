@@ -215,6 +215,14 @@ export {
 } from "./inline-scripts/parityContract";
 export { redactTelemetryString } from "./telemetryRedaction";
 export { isSafePath, resolveWithinProject } from "./safePath";
+export {
+  MEDIA_MOUNT_PREFIX,
+  isValidMountName,
+  parseMediaMountPath,
+  resolveMediaMount,
+  normalizeMediaRoots,
+  readProjectMediaRoots,
+} from "./mediaRoots";
 export type {
   HyperframePickerApi,
   HyperframePickerBoundingBox,

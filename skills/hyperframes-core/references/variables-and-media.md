@@ -88,3 +88,40 @@ Video elements must be muted and inline. Audio must be a separate `<audio>` elem
 - For volume fades/ducking, animate `volume` on the timeline (`tl.to("#bgm", { volume: 0, duration: 1 }, "outro")`) rather than swapping `data-volume`. The runtime probes the timeline's volume keyframes and applies them identically in preview and render; `data-volume` is the static baseline for elements no tween touches.
 
 For media duration: `<video>` and `<audio>` can omit `data-duration` if the media's intrinsic length is known and you want the full clip. Otherwise provide `data-duration` explicitly.
+
+### External media (outside the project dir)
+
+Large sources (a multi-hundred-MB video) don't have to be copied or hardlinked into `assets/`. Declare a named root in `hyperframes.json` and reference it with the reserved `external/<mount>/…` prefix — the preview and render file servers both resolve it (symlink-safe, allowlisted):
+
+```jsonc
+// hyperframes.json
+{
+  "mediaRoots": { "imported": "/abs/path/to/imported-videos" },
+}
+```
+
+```html
+<video
+  id="a-roll"
+  class="clip"
+  src="external/imported/ep1.mp4"
+  data-start="0"
+  data-duration="12"
+  data-track-index="0"
+  muted
+  playsinline
+></video>
+<audio
+  id="a-roll-audio"
+  src="external/imported/ep1.mp4"
+  data-start="0"
+  data-duration="12"
+  data-track-index="10"
+  data-volume="1"
+></audio>
+```
+
+- Mount names are `[A-Za-z0-9_-]+`; the path after the mount is contained to its root (traversal/symlink escapes are refused → 404).
+- Relative `mediaRoots` values resolve against the project dir; absolute values are used as-is.
+- Preview serves external media on a **loopback bind only** by default. If you expose preview to the network (`HYPERFRAMES_PREVIEW_HOST=0.0.0.0`), external roots are refused unless you set `HYPERFRAMES_ALLOW_EXTERNAL_EXPOSED=1`. Render capture (loopback, ephemeral) always resolves them.
+- Everything else — muted video, separate `<audio>`, direct-host-root placement — is unchanged; only the `src` changes.
