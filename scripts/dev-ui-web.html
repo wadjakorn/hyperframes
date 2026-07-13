@@ -136,6 +136,15 @@
   .toggle{display:inline-flex;align-items:center;gap:8px;color:var(--mut);cursor:pointer;user-select:none;font-size:13px}
   .toggle input{accent-color:var(--iris);width:15px;height:15px}
   .empty{color:var(--mut);font-size:13px;padding:16px;text-align:center;border:1px dashed var(--line-2);border-radius:10px}
+  .doctor{display:flex;flex-direction:column;gap:2px}
+  .drow{display:flex;align-items:baseline;gap:12px;padding:8px 12px;border-radius:8px}
+  .drow+.drow{border-top:1px solid var(--line)}
+  .drow .dmark{font-weight:700;width:14px;flex:none}
+  .drow.ok .dmark{color:var(--live)} .drow.bad .dmark{color:var(--amber)}
+  .drow .dname{min-width:120px;flex:none;color:var(--fg);font-size:13px}
+  .drow .ddetail{color:var(--mut);font-size:13px}
+  .drow.bad .ddetail{color:var(--fg)}
+  .drow .dhint{display:block;color:var(--amber);font-family:var(--mono);font-size:12px;margin-top:3px}
   .warn{background:var(--alert-soft);border:1px solid rgba(255,107,107,.32);border-radius:10px;
     padding:11px 15px;font-size:12.5px;color:#ffb4b4;line-height:1.5}
   a.link{color:var(--iris);text-decoration:none;font-weight:600}
@@ -165,6 +174,12 @@
 </header>
 
 <main>
+  <section class="block">
+    <div class="eyebrow"><h2>Environment</h2><span class="tick" id="doctorTick"></span>
+      <button class="btn ghost sm rt" id="doctorBtn">Run doctor</button></div>
+    <div id="doctor" class="doctor"><div class="empty">Bootstrap check — bun on PATH, git identity, whisper models. Prefetch big models from a terminal: <span class="mono">./scripts/dev-ui.sh doctor --prefetch</span></div></div>
+  </section>
+
   <section class="block">
     <div class="eyebrow"><h2>Servers</h2><span class="tick" id="serversTick"></span>
       <button class="btn danger sm rt" id="stopall">Stop all</button></div>
@@ -271,6 +286,22 @@ async function refresh(){
     $("#serversTick").textContent = "updated " + now();
   } catch(e){ if(e.message!=="unauthorized") toast("Couldn’t reach the manager: "+e.message, true); }
 }
+async function runDoctor(){
+  const el = $("#doctor"), btn = $("#doctorBtn");
+  btn.disabled = true; el.innerHTML = '<div class="empty">Running checks…</div>';
+  try{
+    const r = await api("/api/doctor", POST({}));
+    const checks = r.checks || [];
+    el.innerHTML = checks.map(c=>`
+      <div class="drow ${c.ok?"ok":"bad"}">
+        <span class="dmark">${c.ok?"✓":"✗"}</span>
+        <span class="dname mono">${esc(c.name)}</span>
+        <span class="ddetail">${esc(c.detail)}${c.hint?`<span class="dhint">→ ${esc(c.hint)}</span>`:""}</span>
+      </div>`).join("");
+    $("#doctorTick").textContent = (r.ok?"all good":"needs attention")+" · "+now();
+  }catch(e){ el.innerHTML = '<div class="empty">Doctor failed: '+esc(e.message)+'</div>'; }
+  finally{ btn.disabled = false; }
+}
 async function doStop(t){ try{ await api("/api/stop", POST({target:t})); toast("Stopped "+t); refresh(); }catch(e){ toast(e.message,true);} }
 async function doRestart(t){ try{ toast("Restarting "+t+"…"); await api("/api/restart", POST({target:t})); toast("Restarted "+t); refresh(); }catch(e){ toast(e.message,true);} }
 
@@ -361,6 +392,7 @@ function updateWarn(){
 
 /* ── wiring ── */
 $("#stopall").onclick = ()=> doStop("all");
+$("#doctorBtn").onclick = runDoctor;
 $("#refresh").onclick = ()=>{ refresh(); pollJobs(); };
 $("#startBtn").onclick = async ()=>{
   const project = $("#startProject").value;
