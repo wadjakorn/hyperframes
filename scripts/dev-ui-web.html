@@ -1514,6 +1514,25 @@
         );
         return m ? m[1] : "small";
       }
+      // Transcription language. "" = auto-detect (the default). Forcing a code
+      // matters because the whisper.cpp fallback assumes English otherwise — pick
+      // Thai for Thai speech, etc. Kept to a common regional set; the server accepts
+      // any 2–3 letter ISO code, so this list can grow without a server change.
+      const CAPTION_LANGS = [
+        ["", "Auto-detect"],
+        ["th", "Thai"],
+        ["en", "English"],
+        ["zh", "Chinese"],
+        ["ja", "Japanese"],
+        ["ko", "Korean"],
+        ["vi", "Vietnamese"],
+        ["id", "Indonesian"],
+        ["es", "Spanish"],
+        ["fr", "French"],
+        ["de", "German"],
+      ];
+      // the transcript's current language code, for preselecting the regen dropdown
+      const captionLanguage = (cap) => (cap && cap.language ? cap.language : "");
       async function loadCaptions(path) {
         try {
           state.captions[path] = await api("/api/captions?project=" + encodeURIComponent(path));
@@ -1558,8 +1577,12 @@
         // a regenerate re-enters this card for a project that already has captions
         const regen = !!(state.captions[path] && state.captions[path].isCaptionProject);
         const preModel = (run && run.model) || (regen ? captionModel(state.captions[path]) : "small");
+        const preLang = (run && run.language) || (regen ? captionLanguage(state.captions[path]) : "");
         const opt = (v, label) =>
           `<option value="${v}"${preModel === v ? " selected" : ""}>${label}</option>`;
+        const langOpts = CAPTION_LANGS.map(
+          ([v, label]) => `<option value="${v}"${preLang === v ? " selected" : ""}>${label}</option>`,
+        ).join("");
         box.innerHTML = `
     <div class="gate">
       <div class="cap-head"><h3>${regen ? "Re-transcribe &amp; rebuild" : "Generate captions"}</h3><span class="engine mono">Cinematic</span></div>
@@ -1575,8 +1598,14 @@
             ${opt("medium", "medium — better for Thai / accented speech")}
           </select>
         </label>
+        <label class="hint">Language
+          <select id="genLang" class="mono" ${running ? "disabled" : ""}>
+            ${langOpts}
+          </select>
+        </label>
         <button class="btn primary" id="genRun" ${running ? "disabled" : ""}>${running ? "Working… keeps running if you switch away" : regen ? "Re-transcribe &amp; rebuild captions" : "Transcribe &amp; build captions"}</button>
       </div>
+      <p class="hint" style="margin-top:6px">Leave Language on “Auto-detect” for English; pick <strong>Thai</strong> (with model <strong>medium</strong>) for Thai speech — auto-detect can otherwise fall back to English.</p>
       <div class="gen-status${running ? " show" : ""}" id="genStatus"></div>
       <div class="log${run && run.lines.length ? " show" : ""}" id="genLog"></div>
     </div>`;
@@ -1689,7 +1718,15 @@ Author CINEMATIC captions for this project. This project directory is your curre
       //   2. agent (with repo access) authors cinematic.json + compiles → plan/index
       async function generateCaptions(path) {
         const model = $("#genEngine")?.value || "small";
-        const run = { running: true, lines: [], model, phase: "transcribe", startedAt: Date.now() };
+        const language = $("#genLang")?.value || "";
+        const run = {
+          running: true,
+          lines: [],
+          model,
+          language,
+          phase: "transcribe",
+          startedAt: Date.now(),
+        };
         state.genRuns[path] = run;
         state.agentBusy = true;
         const push = makeGenPush(path, run);
@@ -1698,18 +1735,24 @@ Author CINEMATIC captions for this project. This project directory is your curre
           btn.disabled = true;
           btn.textContent = "Working… keeps running if you switch away";
         }
-        const genSel = $("#genEngine");
-        if (genSel) genSel.disabled = true;
+        for (const id of ["#genEngine", "#genLang"]) {
+          const el = $(id);
+          if (el) el.disabled = true;
+        }
         const logEl = $("#genLog");
         if (logEl) logEl.classList.add("show");
         try {
           // ── phase 1: transcription (server job — no agent sandbox / docker) ──
+          const langName = (CAPTION_LANGS.find(([c]) => c === language) || [, "auto-detected"])[1];
           push(
             "system",
-            `Transcribing with WhisperX “${model}” on the server (CPU — quiet until it finishes)…`,
+            `Transcribing with WhisperX “${model}” (${language ? langName : "auto-detect language"}) on the server (CPU — quiet until it finishes)…`,
           );
           updateGenStatus();
-          const t = await api("/api/captions/retranscribe", POST({ project: path, model }));
+          const t = await api(
+            "/api/captions/retranscribe",
+            POST({ project: path, model, language }),
+          );
           const ok = await pollJobDone(t.id, (line) => push("tool", line));
           if (!ok) throw new Error("Transcription failed — check Jobs under Setup & advanced.");
           push("result", "Transcript ready. Authoring cinematic captions…");

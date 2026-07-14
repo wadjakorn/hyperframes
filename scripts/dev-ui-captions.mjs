@@ -46,6 +46,7 @@ export function readCaptions(dir) {
       hasSource,
       approved: false,
       engine: null,
+      language: null,
       granularity: null,
       groups: [],
     };
@@ -67,6 +68,7 @@ export function readCaptions(dir) {
     hasSource,
     approved: existsSync(approvedMarker(dir)),
     engine: tr.engine ?? null,
+    language: tr.language_code ?? null,
     // every pipeline transcript is flat word-level; a genuine word[] ⇒ "word".
     granularity: Array.isArray(tr.words) && tr.words.length ? "word" : null,
     groups,

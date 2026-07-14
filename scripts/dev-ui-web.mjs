@@ -432,16 +432,18 @@ async function postCaptionsRetranscribe(req, res) {
   const project = safeProjectPath(b.project);
   if (!project) return send(res, 400, { ok: false, error: "unknown project" });
   const model = CAPTION_MODELS.has(String(b.model)) ? String(b.model) : "small";
-  const job = startJob({
-    kind: "transcribe",
-    project,
-    cmd: "node",
-    args: [
-      join(REPO_ROOT, "skills/embedded-captions/scripts/transcribe.cjs"),
-      join(REPO_ROOT, project),
-      model,
-    ],
-  });
+  // optional language: an ISO code (e.g. "th" for Thai) FORCES the transcription
+  // language instead of auto-detect — important because the whisper.cpp fallback
+  // defaults to English when nothing is passed. Validated to a bare code; args are
+  // spawned without a shell, but keep it strict. Empty → auto-detect.
+  const language = /^[a-z]{2,3}$/.test(String(b.language || "")) ? String(b.language) : "";
+  const args = [
+    join(REPO_ROOT, "skills/embedded-captions/scripts/transcribe.cjs"),
+    join(REPO_ROOT, project),
+    model,
+  ];
+  if (language) args.push(language);
+  const job = startJob({ kind: "transcribe", project, cmd: "node", args });
   send(res, 200, { ok: true, id: job.id });
 }
 
