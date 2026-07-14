@@ -634,6 +634,35 @@
       .gen-row select {
         min-width: 240px;
       }
+      .gen-status {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        margin-top: 14px;
+        font-size: 12.5px;
+        color: var(--amber);
+        line-height: 1.5;
+      }
+      .gen-status.show {
+        display: flex;
+      }
+      .gen-status .pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--amber);
+        flex: none;
+        animation: genpulse 1.3s ease-in-out infinite;
+      }
+      @keyframes genpulse {
+        0%,
+        100% {
+          opacity: 0.35;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
       .cards.cards-3 {
         max-width: 900px;
         grid-template-columns: 1fr 1fr 1fr;
@@ -1527,12 +1556,34 @@
         </label>
         <button class="btn primary" id="genRun" ${running ? "disabled" : ""}>${running ? "Working… keeps running if you switch away" : "Transcribe &amp; build captions"}</button>
       </div>
+      <div class="gen-status${running ? " show" : ""}" id="genStatus"></div>
       <div class="log${run && run.lines.length ? " show" : ""}" id="genLog"></div>
     </div>`;
         if (!running) $("#genRun").onclick = () => generateCaptions(path);
         // replay any buffered agent output into the fresh log node
         const out = $("#genLog");
         if (run) for (const ln of run.lines) appendLine(out, ln.cls, ln.text);
+        updateGenStatus();
+      }
+      // live heartbeat: WhisperX runs on CPU with progress printing OFF, so the
+      // log stays silent for minutes — show elapsed time so it doesn't read as stuck.
+      function updateGenStatus() {
+        const el = $("#genStatus");
+        if (!el) return;
+        const run = state.genRuns[state.selected];
+        if (!run || !run.running) {
+          el.classList.remove("show");
+          el.textContent = "";
+          return;
+        }
+        const s = Math.floor((Date.now() - (run.startedAt || Date.now())) / 1000);
+        const clock = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+        const what =
+          run.phase === "author"
+            ? "Authoring &amp; compiling captions"
+            : `Transcribing “${run.model || "small"}” on the server`;
+        el.innerHTML = `<span class="pulse"></span> ${what} · <span class="mono">${clock}</span> elapsed${run.phase !== "author" ? " — WhisperX runs on CPU and prints nothing until done, so this looks quiet (longer on the first run while the model downloads)" : ""}`;
+        el.classList.add("show");
       }
       // poll a server job until it stops running; emit each new lastLine.
       async function pollJobDone(id, onLine) {
@@ -1586,7 +1637,7 @@
       //   2. agent (with repo access) authors cinematic.json + compiles → plan/index
       async function generateCaptions(path) {
         const model = $("#genEngine")?.value || "small";
-        const run = { running: true, lines: [] };
+        const run = { running: true, lines: [], model, phase: "transcribe", startedAt: Date.now() };
         state.genRuns[path] = run;
         state.agentBusy = true;
         // buffer every line + mirror into the log IF this project is on screen;
@@ -1610,11 +1661,17 @@
         if (logEl) logEl.classList.add("show");
         try {
           // ── phase 1: transcription (server job — no agent sandbox / docker) ──
-          push("system", `Transcribing with WhisperX “${model}” on the server…`);
+          push(
+            "system",
+            `Transcribing with WhisperX “${model}” on the server (CPU — quiet until it finishes)…`,
+          );
+          updateGenStatus();
           const t = await api("/api/captions/retranscribe", POST({ project: path, model }));
           const ok = await pollJobDone(t.id, (line) => push("tool", line));
           if (!ok) throw new Error("Transcription failed — check Jobs under Setup & advanced.");
           push("result", "Transcript ready. Authoring cinematic captions…");
+          run.phase = "author";
+          updateGenStatus();
           // ── phase 2: author + compile (agent, repo access) ──
           const prompt = `A transcript already exists at transcript.json in this project — do NOT transcribe again.
 Author and compile CINEMATIC captions for this project. This project directory is your current working directory; the repository root (containing the skills/ folder) is also available.
@@ -2143,6 +2200,7 @@ Author and compile CINEMATIC captions for this project. This project directory i
         // caption flags drive the rail "review" badges; fetch then re-badge
         loadCaptionFlags().then(renderRail);
         setInterval(poll, 3000);
+        setInterval(updateGenStatus, 1000); // live elapsed heartbeat during caption-gen
       }
       // poll refreshes only live state — never re-renders the canvas while the user
       // is typing in the agent box / create form or an agent run is streaming.
