@@ -1581,7 +1581,9 @@
         const what =
           run.phase === "author"
             ? "Authoring &amp; compiling captions"
-            : `Transcribing “${run.model || "small"}” on the server`;
+            : run.model
+              ? `Transcribing “${run.model}” on the server`
+              : "Transcribing on the server";
         el.innerHTML = `<span class="pulse"></span> ${what} · <span class="mono">${clock}</span> elapsed${run.phase !== "author" ? " — WhisperX runs on CPU and prints nothing until done, so this looks quiet (longer on the first run while the model downloads)" : ""}`;
         el.classList.add("show");
       }
@@ -1632,6 +1634,33 @@
           }
         }
       }
+      // buffered push: append to the run buffer + mirror to the log iff this
+      // project is on screen (re-query #genLog each call so it follows re-renders).
+      function makeGenPush(path, run) {
+        return (cls, text) => {
+          run.lines.push({ cls, text });
+          while (run.lines.length > LOG_MAX) run.lines.shift();
+          if (state.selected === path) {
+            const out = $("#genLog");
+            if (out) appendLine(out, cls, text);
+          }
+        };
+      }
+      const AUTHOR_PROMPT = `A transcript already exists at transcript.json in this project — do NOT transcribe again.
+Author and compile CINEMATIC captions for this project. This project directory is your current working directory; the repository root (containing the skills/ folder) is also available.
+- Read the workflow and schema in skills/embedded-captions/SKILL.md and the header of skills/embedded-captions/scripts/make-cinematic.cjs.
+- Author cinematic.json using the Cinematic "cream" DNA: group transcript.json's words into thought-blocks (2–5 words per line at clause boundaries), words verbatim in spoken order, at most one "hero": true line at the climax.
+- Compile with absolute paths: node <repo>/skills/embedded-captions/scripts/make-cinematic.cjs <this-project-dir>, then node <repo>/skills/embedded-captions/scripts/make-composition.cjs <this-project-dir>. Fix errors and re-run until both succeed and plan.json + index.html exist.
+- Do NOT render the final MP4. Stop once plan.json and index.html exist.`;
+      // shared teardown after a run (or reconnect) ends
+      async function finishGenRun(path, run) {
+        run.running = false;
+        state.agentBusy = false;
+        await loadCaptions(path);
+        renderRail();
+        if (state.selected === path) refreshCaptionGate(path); // → review gate, or re-enable
+        reloadPreview(path);
+      }
       // Two-phase Cinematic caption generation (design "B"):
       //   1. transcribe.cjs server-side (the WhisperX/docker step) → transcript.json
       //   2. agent (with repo access) authors cinematic.json + compiles → plan/index
@@ -1640,16 +1669,7 @@
         const run = { running: true, lines: [], model, phase: "transcribe", startedAt: Date.now() };
         state.genRuns[path] = run;
         state.agentBusy = true;
-        // buffer every line + mirror into the log IF this project is on screen;
-        // re-query #genLog each call so it follows re-renders (project switches).
-        const push = (cls, text) => {
-          run.lines.push({ cls, text });
-          while (run.lines.length > LOG_MAX) run.lines.shift();
-          if (state.selected === path) {
-            const out = $("#genLog");
-            if (out) appendLine(out, cls, text);
-          }
-        };
+        const push = makeGenPush(path, run);
         const btn = $("#genRun");
         if (btn) {
           btn.disabled = true;
@@ -1673,22 +1693,72 @@
           run.phase = "author";
           updateGenStatus();
           // ── phase 2: author + compile (agent, repo access) ──
-          const prompt = `A transcript already exists at transcript.json in this project — do NOT transcribe again.
-Author and compile CINEMATIC captions for this project. This project directory is your current working directory; the repository root (containing the skills/ folder) is also available.
-- Read the workflow and schema in skills/embedded-captions/SKILL.md and the header of skills/embedded-captions/scripts/make-cinematic.cjs.
-- Author cinematic.json using the Cinematic "cream" DNA: group transcript.json's words into thought-blocks (2–5 words per line at clause boundaries), words verbatim in spoken order, at most one "hero": true line at the climax.
-- Compile with absolute paths: node <repo>/skills/embedded-captions/scripts/make-cinematic.cjs <this-project-dir>, then node <repo>/skills/embedded-captions/scripts/make-composition.cjs <this-project-dir>. Fix errors and re-run until both succeed and plan.json + index.html exist.
-- Do NOT render the final MP4. Stop once plan.json and index.html exist.`;
-          await streamAgent(path, prompt, push, { repoAccess: true });
+          await streamAgent(path, AUTHOR_PROMPT, push, { repoAccess: true });
         } catch (e) {
           push("error", e.message);
         } finally {
-          run.running = false;
-          state.agentBusy = false;
-          await loadCaptions(path);
-          renderRail();
-          if (state.selected === path) refreshCaptionGate(path); // → review gate, or re-enable
-          reloadPreview(path);
+          await finishGenRun(path, run);
+        }
+      }
+      // On page load the client buffer is gone, but the transcribe/agent jobs keep
+      // running server-side. Reconnect to any in-progress caption job and resume.
+      async function reconnectCaptionJobs() {
+        let jobs = [];
+        try {
+          jobs = (await api("/api/jobs")).jobs || [];
+        } catch {
+          return;
+        }
+        const live = jobs.filter(
+          (j) => j.state === "running" && (j.kind === "transcribe" || j.kind === "agent"),
+        );
+        const byProject = new Map();
+        for (const j of live) if (!byProject.has(j.project)) byProject.set(j.project, j);
+        for (const [path, job] of byProject) {
+          if (state.genRuns[path]?.running) continue;
+          const run = {
+            running: true,
+            lines: [],
+            model: "",
+            phase: job.kind === "agent" ? "author" : "transcribe",
+            startedAt: job.startedAt || Date.now(),
+          };
+          state.genRuns[path] = run;
+          state.agentBusy = true;
+          resumeCaptionJob(path, job); // fire-and-forget
+        }
+        renderRail();
+        if (state.selected) refreshCaptionGate(state.selected);
+      }
+      // Resume a running caption job after a refresh. We can't re-stream a live
+      // agent's SSE, so we poll its job output; a resumed transcribe still hands
+      // off to the authoring agent when it completes.
+      async function resumeCaptionJob(path, job) {
+        const run = state.genRuns[path];
+        const push = makeGenPush(path, run);
+        push(
+          "system",
+          job.kind === "agent"
+            ? "Reconnected — authoring & compiling is still running on the server…"
+            : "Reconnected — transcription is still running on the server…",
+        );
+        updateGenStatus();
+        try {
+          if (job.kind === "transcribe") {
+            const ok = await pollJobDone(job.id, (line) => push("tool", line));
+            if (!ok) throw new Error("Transcription failed — check Jobs under Setup & advanced.");
+            push("result", "Transcript ready. Authoring cinematic captions…");
+            run.phase = "author";
+            updateGenStatus();
+            await streamAgent(path, AUTHOR_PROMPT, push, { repoAccess: true });
+          } else {
+            const ok = await pollJobDone(job.id, (line) => push("tool", line));
+            push(ok ? "result" : "error", ok ? "Authoring finished." : "Authoring failed.");
+          }
+        } catch (e) {
+          push("error", e.message);
+        } finally {
+          await finishGenRun(path, run);
         }
       }
       function renderCaptionGate(box, path, cap) {
@@ -2199,6 +2269,7 @@ Author and compile CINEMATIC captions for this project. This project directory i
         renderCanvas();
         // caption flags drive the rail "review" badges; fetch then re-badge
         loadCaptionFlags().then(renderRail);
+        reconnectCaptionJobs(); // resume any caption generation still running server-side
         setInterval(poll, 3000);
         setInterval(updateGenStatus, 1000); // live elapsed heartbeat during caption-gen
       }
