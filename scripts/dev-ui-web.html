@@ -940,6 +940,8 @@
     <div id="drawer-root"></div>
     <div id="toast"></div>
 
+    <!-- standalone <hyperframes-player> — chrome-free composition preview + scrubber -->
+    <script src="/assets/player.js"></script>
     <script>
       const $ = (s, r = document) => r.querySelector(s);
       const POST = (obj) => ({
@@ -1224,6 +1226,27 @@
         renderAgent($("#wsAgent"), path);
       }
 
+      // the running preview server IS the Studio editor (pv.url); it also serves
+      // the same composition chrome-free at /api/projects/<name>/preview — that's
+      // what <hyperframes-player> loads, so the workspace shows a clean preview
+      // and "Open full editor ↗" (pv.url) is the escape hatch to the full editor.
+      function compositionUrl(path) {
+        const pv = state.preview[path];
+        if (!pv || !pv.url) return null;
+        const name = path.split("/").pop();
+        const t = pv.nonce || 0;
+        return `${pv.url}/api/projects/${encodeURIComponent(name)}/preview${t ? "?t=" + t : ""}`;
+      }
+      // the bare preview route has no push hot-reload; bump the player src to
+      // reload it after the agent edits files.
+      function reloadPreview(path) {
+        const pv = state.preview[path];
+        if (!pv || pv.state !== "live" || state.selected !== path) return;
+        pv.nonce = (pv.nonce || 0) + 1;
+        const player = $("#wsPlayer");
+        if (player) player.setAttribute("src", compositionUrl(path));
+      }
+
       // draw the preview region for its current state
       function renderPreviewState(path) {
         const box = $("#wsPreview");
@@ -1236,7 +1259,7 @@
         if (pv.state === "live" && pv.url) {
           box.innerHTML = `
       <span class="pv-live-tag"><span class="beat"></span>live · reloads on edit</span>
-      <iframe class="frame" src="${esc(pv.url)}" title="preview of ${esc(path)}"></iframe>`;
+      <hyperframes-player id="wsPlayer" class="frame" controls src="${esc(compositionUrl(path))}"></hyperframes-player>`;
         } else if (pv.state === "failed") {
           box.innerHTML = `<div class="pv-state">
       <div>Preview didn’t start.</div>
@@ -1403,6 +1426,7 @@
           btn.disabled = false;
           btn.textContent = "Send";
           state.agentBusy = false;
+          reloadPreview(path); // agent edited files → refresh the chrome-free preview
         }
       }
 

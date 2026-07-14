@@ -241,6 +241,20 @@ function getExamples(_req, res) {
     send(res, 200, { examples: [] });
   }
 }
+// serve the standalone <hyperframes-player> bundle so the workspace preview can
+// render a chrome-free player (composition + scrubber) instead of the editor.
+const PLAYER_BUNDLE = join(REPO_ROOT, "packages/player/dist/hyperframes-player.global.js");
+function getPlayerJs(_req, res) {
+  try {
+    res.writeHead(200, {
+      "Content-Type": "application/javascript; charset=utf-8",
+      "Cache-Control": "no-cache",
+    });
+    res.end(readFileSync(PLAYER_BUNDLE));
+  } catch {
+    send(res, 404, { error: "player bundle not built (run bun run build)" });
+  }
+}
 async function postStart(req, res) {
   const b = await readBody(req);
   const project = safeProjectPath(b.project);
@@ -351,6 +365,7 @@ const ROUTES = {
   "GET /api/status": getStatus,
   "GET /api/projects": getProjects,
   "GET /api/examples": getExamples,
+  "GET /assets/player.js": getPlayerJs,
   "GET /api/jobs": getJobs,
   "POST /api/start": postStart,
   "POST /api/studio": postStudio,
