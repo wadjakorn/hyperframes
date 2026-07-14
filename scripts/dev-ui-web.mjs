@@ -246,15 +246,17 @@ function getExamples(_req, res) {
 // render a chrome-free player (composition + scrubber) instead of the editor.
 const PLAYER_BUNDLE = join(REPO_ROOT, "packages/player/dist/hyperframes-player.global.js");
 function getPlayerJs(_req, res) {
+  let buf;
   try {
-    res.writeHead(200, {
-      "Content-Type": "application/javascript; charset=utf-8",
-      "Cache-Control": "no-cache",
-    });
-    res.end(readFileSync(PLAYER_BUNDLE));
+    buf = readFileSync(PLAYER_BUNDLE); // read BEFORE writing headers
   } catch {
-    send(res, 404, { error: "player bundle not built (run bun run build)" });
+    return send(res, 404, { error: "player bundle not built (run bun run build)" });
   }
+  res.writeHead(200, {
+    "Content-Type": "application/javascript; charset=utf-8",
+    "Cache-Control": "no-cache",
+  });
+  res.end(buf);
 }
 async function postStart(req, res) {
   const b = await readBody(req);
