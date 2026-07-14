@@ -1,420 +1,1616 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>HyperFrames Console</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%238b7dff'/><rect x='9' y='9' width='14' height='14' rx='3.5' fill='%230b0c0f'/></svg>" />
-<style>
-  :root{
-    color-scheme: dark;
-    --bg:#0b0c0f; --surface:#131519; --inset:#0c0e12; --line:#22252d; --line-2:#2b2f39;
-    --fg:#eceef1; --mut:#828a97; --dim:#5b626e;
-    --iris:#8b7dff; --iris-soft:rgba(139,125,255,.13); --iris-line:rgba(139,125,255,.42);
-    --live:#4fe3aa; --live-soft:rgba(79,227,170,.13);
-    --amber:#f5b544; --amber-soft:rgba(245,181,68,.15);
-    --alert:#ff6b6b; --alert-soft:rgba(255,107,107,.13);
-    --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
-    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    --r:11px;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--fg);font:14.5px/1.55 var(--sans);
-    background-image:radial-gradient(1200px 500px at 82% -8%, rgba(139,125,255,.07), transparent 70%);
-    -webkit-font-smoothing:antialiased;}
-  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.1px}
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HyperFrames Console</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%238b7dff'/><rect x='9' y='9' width='14' height='14' rx='3.5' fill='%230b0c0f'/></svg>"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0c0f;
+        --surface: #131519;
+        --inset: #0c0e12;
+        --line: #22252d;
+        --line-2: #2b2f39;
+        --fg: #eceef1;
+        --mut: #828a97;
+        --dim: #5b626e;
+        --iris: #8b7dff;
+        --iris-soft: rgba(139, 125, 255, 0.13);
+        --iris-line: rgba(139, 125, 255, 0.42);
+        --live: #4fe3aa;
+        --live-soft: rgba(79, 227, 170, 0.13);
+        --amber: #f5b544;
+        --amber-soft: rgba(245, 181, 68, 0.15);
+        --alert: #ff6b6b;
+        --alert-soft: rgba(255, 107, 107, 0.13);
+        --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        --r: 11px;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font: 14.5px/1.55 var(--sans);
+        background-image: radial-gradient(
+          1200px 500px at 82% -8%,
+          rgba(139, 125, 255, 0.07),
+          transparent 70%
+        );
+        -webkit-font-smoothing: antialiased;
+      }
+      .mono {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.1px;
+      }
 
-  /* ── command bar ─────────────────────────────────────────────── */
-  .bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
-    padding:14px 24px;border-bottom:1px solid var(--line);
-    background:rgba(11,12,15,.82);backdrop-filter:blur(14px)}
-  .mark{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-.2px}
-  .mark .glyph{width:22px;height:22px;border-radius:6px;background:var(--iris);
-    display:grid;place-items:center;flex:none}
-  .mark .glyph::after{content:"";width:9px;height:9px;border-radius:2px;background:var(--bg)}
-  .mark .sub{color:var(--mut);font-weight:500;font-size:12px;letter-spacing:.14em;text-transform:uppercase}
-  .live{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--mut);
-    padding:5px 11px;border:1px solid var(--line);border-radius:99px}
-  .live .beat{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none}
-  .live.on .beat{background:var(--live);box-shadow:0 0 0 0 var(--live-soft);animation:beat 2s infinite}
-  .live.on{color:var(--fg);border-color:var(--line-2)}
-  @keyframes beat{0%{box-shadow:0 0 0 0 rgba(79,227,170,.5)}70%{box-shadow:0 0 0 7px rgba(79,227,170,0)}100%{box-shadow:0 0 0 0 rgba(79,227,170,0)}}
-  .grow{flex:1}
+      /* ── app shell: rail + canvas ─────────────────────────────────── */
+      .app {
+        display: grid;
+        grid-template-columns: 236px 1fr;
+        min-height: 100vh;
+      }
+      .rail {
+        border-right: 1px solid var(--line);
+        background: var(--inset);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 16px 12px;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow: auto;
+      }
+      .canvas {
+        min-width: 0;
+        padding: 26px 30px 70px;
+        max-width: 1100px;
+      }
+      @media (max-width: 760px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .rail {
+          position: static;
+          height: auto;
+        }
+      }
 
-  /* ── layout ──────────────────────────────────────────────────── */
-  main{max-width:940px;margin:0 auto;padding:30px 24px 80px;display:flex;flex-direction:column;gap:34px}
-  .block{display:flex;flex-direction:column;gap:14px}
-  .eyebrow{display:flex;align-items:baseline;gap:12px;padding:0 2px}
-  .eyebrow h2{font-size:12px;font-weight:650;letter-spacing:.16em;text-transform:uppercase;color:var(--fg)}
-  .eyebrow .tick{font-family:var(--mono);font-size:11px;color:var(--dim)}
-  .eyebrow .rt{margin-left:auto}
+      /* ── rail ─────────────────────────────────────────────────────── */
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+        padding: 2px 6px 10px;
+      }
+      .brand .glyph {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: var(--iris);
+        display: grid;
+        place-items: center;
+        flex: none;
+      }
+      .brand .glyph::after {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--bg);
+      }
+      .rail .newbtn {
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 6px;
+      }
+      .rail-label {
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        padding: 8px 8px 4px;
+      }
+      .vids {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+        min-height: 0;
+      }
+      .vid {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 8px 9px;
+        border-radius: 9px;
+        cursor: pointer;
+        border: 1px solid transparent;
+        text-align: left;
+        background: transparent;
+        color: var(--fg);
+        font: inherit;
+        width: 100%;
+      }
+      .vid:hover {
+        background: var(--surface);
+      }
+      .vid.on {
+        background: var(--surface);
+        border-color: var(--line-2);
+      }
+      .vid .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--dim);
+        flex: none;
+      }
+      .vid.up .dot {
+        background: var(--live);
+        box-shadow: 0 0 8px var(--live);
+      }
+      .vid .vname {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 14px;
+      }
+      .vid .badge {
+        font-size: 10.5px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+        color: var(--amber);
+        background: var(--amber-soft);
+        border: 1px solid rgba(245, 181, 68, 0.3);
+        border-radius: 6px;
+        padding: 2px 6px;
+        flex: none;
+      }
+      .rail .foot {
+        margin-top: 6px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line);
+      }
+      .rail .gear {
+        width: 100%;
+        justify-content: flex-start;
+        gap: 9px;
+        color: var(--mut);
+      }
+      .rail-empty {
+        color: var(--dim);
+        font-size: 12.5px;
+        padding: 10px 8px;
+        line-height: 1.5;
+      }
 
-  /* ── buttons ─────────────────────────────────────────────────── */
-  .btn{font:inherit;font-weight:600;font-size:13.5px;cursor:pointer;border-radius:9px;
-    padding:8px 15px;border:1px solid var(--line-2);background:#191c22;color:var(--fg);
-    transition:transform .08s ease,border-color .12s,background .12s;white-space:nowrap}
-  .btn:hover{border-color:var(--dim)}
-  .btn:active{transform:translateY(1px)}
-  .btn:focus-visible{outline:2px solid var(--iris);outline-offset:2px}
-  .btn.primary{background:var(--iris);border-color:var(--iris);color:#0a0b0f}
-  .btn.primary:hover{background:#9d90ff;border-color:#9d90ff}
-  .btn.ghost{background:transparent}
-  .btn.danger{background:transparent;border-color:transparent;color:var(--alert)}
-  .btn.danger:hover{border-color:var(--alert);background:var(--alert-soft)}
-  .btn.sm{padding:6px 11px;font-size:12.5px;border-radius:8px}
-  .btn:disabled{opacity:.5;cursor:default;transform:none}
+      /* ── buttons ─────────────────────────────────────────────────── */
+      .btn {
+        font: inherit;
+        font-weight: 600;
+        font-size: 13.5px;
+        cursor: pointer;
+        border-radius: 9px;
+        padding: 8px 15px;
+        border: 1px solid var(--line-2);
+        background: #191c22;
+        color: var(--fg);
+        transition:
+          transform 0.08s ease,
+          border-color 0.12s,
+          background 0.12s;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .btn:hover {
+        border-color: var(--dim);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--iris);
+        outline-offset: 2px;
+      }
+      .btn.primary {
+        background: var(--iris);
+        border-color: var(--iris);
+        color: #0a0b0f;
+      }
+      .btn.primary:hover {
+        background: #9d90ff;
+        border-color: #9d90ff;
+      }
+      .btn.ghost {
+        background: transparent;
+      }
+      .btn.danger {
+        background: transparent;
+        border-color: transparent;
+        color: var(--alert);
+      }
+      .btn.danger:hover {
+        border-color: var(--alert);
+        background: var(--alert-soft);
+      }
+      .btn.sm {
+        padding: 6px 11px;
+        font-size: 12.5px;
+        border-radius: 8px;
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+        transform: none;
+      }
+      a.btn {
+        text-decoration: none;
+      }
 
-  /* ── channel strips (servers) ────────────────────────────────── */
-  .strips{display:flex;flex-direction:column;gap:9px}
-  .strip{display:flex;align-items:center;gap:14px;position:relative;
-    background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
-    padding:14px 16px 14px 18px;overflow:hidden}
-  .strip::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dim)}
-  .strip.up::before{background:var(--live)}
-  .strip .beat{width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none}
-  .strip.up .beat{background:var(--live);box-shadow:0 0 10px var(--live)}
-  .strip .who{min-width:0;flex:1}
-  .strip .name{font-weight:600;font-size:15px;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .strip .path{font-family:var(--mono);font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .chip{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--iris);
-    background:var(--iris-soft);border:1px solid var(--iris-line);border-radius:7px;padding:3px 9px;flex:none}
-  .tag{font-family:var(--mono);font-size:11px;color:var(--mut);border:1px solid var(--line-2);
-    border-radius:6px;padding:3px 8px;flex:none}
-  .tag.net{color:var(--amber);border-color:var(--amber-soft);background:var(--amber-soft)}
-  .strip .acts{display:flex;gap:7px;flex:none}
-  a.btn{text-decoration:none;display:inline-flex;align-items:center}
+      textarea,
+      input,
+      select {
+        font: inherit;
+        color: var(--fg);
+        background: var(--inset);
+        border: 1px solid var(--line-2);
+        border-radius: 9px;
+        padding: 9px 12px;
+      }
+      textarea:focus,
+      input:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--iris-line);
+        box-shadow: 0 0 0 3px var(--iris-soft);
+      }
+      select {
+        cursor: pointer;
+      }
+      select.mono,
+      input.mono {
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .hint {
+        color: var(--mut);
+        font-size: 12.5px;
+      }
 
-  /* ── agent console ───────────────────────────────────────────── */
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
-  .field{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-  .hint{color:var(--mut);font-size:12.5px}
-  textarea,input,select{font:inherit;color:var(--fg);background:var(--inset);
-    border:1px solid var(--line-2);border-radius:9px;padding:9px 12px}
-  textarea:focus,input:focus,select:focus{outline:none;border-color:var(--iris-line);box-shadow:0 0 0 3px var(--iris-soft)}
-  textarea{width:100%;resize:vertical;min-height:74px;margin-top:12px;line-height:1.5}
-  select.mono,input.mono{font-family:var(--mono);font-size:13px}
-  select{min-width:220px;cursor:pointer}
-  .rowend{display:flex;justify-content:flex-end;gap:10px;margin-top:10px}
-  .term{display:none;margin-top:14px;background:var(--inset);border:1px solid var(--line);
-    border-radius:9px;padding:13px 15px;max-height:340px;overflow:auto;
-    font-family:var(--mono);font-size:12.5px;line-height:1.6}
-  .term .ln{white-space:pre-wrap;word-break:break-word}
-  .term .assistant{color:var(--fg)}
-  .term .tool{color:var(--iris)}
-  .term .system,.term .start,.term .end{color:var(--dim)}
-  .term .result{color:var(--live)}
-  .term .error{color:var(--alert)}
+      /* ── front door ──────────────────────────────────────────────── */
+      .door {
+        min-height: 70vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        text-align: center;
+      }
+      .door h1 {
+        font-size: 26px;
+        font-weight: 680;
+        letter-spacing: -0.5px;
+        text-wrap: balance;
+      }
+      .door p.lede {
+        color: var(--mut);
+        max-width: 44ch;
+        margin-bottom: 22px;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        width: 100%;
+        max-width: 640px;
+      }
+      @media (max-width: 620px) {
+        .cards {
+          grid-template-columns: 1fr;
+        }
+      }
+      .startcard {
+        text-align: left;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 22px 20px;
+        cursor: pointer;
+        transition:
+          border-color 0.14s,
+          transform 0.08s;
+        color: var(--fg);
+        font: inherit;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .startcard:hover {
+        border-color: var(--iris-line);
+        transform: translateY(-2px);
+      }
+      .startcard:disabled {
+        opacity: 0.55;
+        cursor: default;
+        transform: none;
+        border-color: var(--line);
+      }
+      .startcard .ic {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        font-size: 19px;
+        background: var(--iris-soft);
+        border: 1px solid var(--iris-line);
+        margin-bottom: 6px;
+      }
+      .startcard.alt .ic {
+        background: #1b1e25;
+        border-color: var(--line-2);
+      }
+      .startcard h3 {
+        font-size: 16px;
+        font-weight: 640;
+        letter-spacing: -0.2px;
+      }
+      .startcard p {
+        color: var(--mut);
+        font-size: 13px;
+        line-height: 1.5;
+      }
 
-  /* ── jobs ────────────────────────────────────────────────────── */
-  .jobbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .jobs{display:flex;flex-direction:column;gap:8px}
-  .job{display:flex;align-items:center;gap:13px;background:var(--surface);
-    border:1px solid var(--line);border-radius:10px;padding:11px 15px}
-  .job .k{font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;
-    padding:3px 8px;border-radius:6px;background:#1b1e25;color:var(--mut);flex:none;width:82px;text-align:center}
-  .job.render .k{color:var(--amber);background:var(--amber-soft)}
-  .job.agent .k{color:var(--iris);background:var(--iris-soft)}
-  .job .p{font-family:var(--mono);font-size:12px;color:var(--mut);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bar-wrap{flex:1.4;min-width:120px;display:flex;align-items:center;gap:9px}
-  .progress{flex:1;height:6px;background:#1b1e25;border-radius:99px;overflow:hidden}
-  .progress>i{display:block;height:100%;background:var(--amber);border-radius:99px;transition:width .35s ease}
-  .st{font-family:var(--mono);font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;flex:none}
-  .st.running{color:var(--amber);background:var(--amber-soft)}
-  .st.done{color:var(--live);background:var(--live-soft)}
-  .st.failed{color:var(--alert);background:var(--alert-soft)}
-  .st.stopped{color:var(--mut);background:#1b1e25}
-  .job .t{font-family:var(--mono);font-size:12px;color:var(--dim);flex:none;width:52px;text-align:right}
+      /* ── create flow ─────────────────────────────────────────────── */
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 24px;
+      }
+      .panel h2 {
+        font-size: 18px;
+        font-weight: 640;
+        letter-spacing: -0.3px;
+        margin-bottom: 4px;
+      }
+      .panel .sub {
+        color: var(--mut);
+        font-size: 13px;
+        margin-bottom: 20px;
+      }
+      .formrow {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .formrow label {
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--mut);
+      }
+      .formrow input,
+      .formrow select {
+        width: 100%;
+        max-width: 360px;
+      }
+      .formactions {
+        display: flex;
+        gap: 10px;
+        margin-top: 8px;
+      }
 
-  /* ── segmented launch ────────────────────────────────────────── */
-  .seg{display:inline-flex;background:var(--inset);border:1px solid var(--line-2);border-radius:9px;padding:3px;gap:3px;align-self:flex-start}
-  .seg button{font:inherit;font-size:13px;font-weight:600;color:var(--mut);background:transparent;border:0;
-    border-radius:7px;padding:6px 14px;cursor:pointer}
-  .seg button.on{background:#22262f;color:var(--fg)}
-  .tab{display:none}
-  .tab.on{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+      /* ── workspace ───────────────────────────────────────────────── */
+      .ws-head {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 18px;
+        flex-wrap: wrap;
+      }
+      .ws-head .title {
+        font-size: 20px;
+        font-weight: 660;
+        letter-spacing: -0.3px;
+        min-width: 0;
+      }
+      .chip {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--iris);
+        background: var(--iris-soft);
+        border: 1px solid var(--iris-line);
+        border-radius: 7px;
+        padding: 3px 9px;
+        flex: none;
+      }
+      .chip.local {
+        color: var(--mut);
+        background: #1b1e25;
+        border-color: var(--line-2);
+      }
+      .ws-head .spacer {
+        flex: 1;
+      }
+      .ws-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
 
-  .toggle{display:inline-flex;align-items:center;gap:8px;color:var(--mut);cursor:pointer;user-select:none;font-size:13px}
-  .toggle input{accent-color:var(--iris);width:15px;height:15px}
-  .empty{color:var(--mut);font-size:13px;padding:16px;text-align:center;border:1px dashed var(--line-2);border-radius:10px}
-  .doctor{display:flex;flex-direction:column;gap:2px}
-  .drow{display:flex;align-items:baseline;gap:12px;padding:8px 12px;border-radius:8px}
-  .drow+.drow{border-top:1px solid var(--line)}
-  .drow .dmark{font-weight:700;width:14px;flex:none}
-  .drow.ok .dmark{color:var(--live)} .drow.bad .dmark{color:var(--amber)}
-  .drow .dname{min-width:120px;flex:none;color:var(--fg);font-size:13px}
-  .drow .ddetail{color:var(--mut);font-size:13px}
-  .drow.bad .ddetail{color:var(--fg)}
-  .drow .dhint{display:block;color:var(--amber);font-family:var(--mono);font-size:12px;margin-top:3px}
-  .warn{background:var(--alert-soft);border:1px solid rgba(255,107,107,.32);border-radius:10px;
-    padding:11px 15px;font-size:12.5px;color:#ffb4b4;line-height:1.5}
-  a.link{color:var(--iris);text-decoration:none;font-weight:600}
-  a.link:hover{text-decoration:underline}
+      /* preview */
+      .preview {
+        background: #000;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+      }
+      .preview .frame {
+        width: 100%;
+        aspect-ratio: 16/9;
+        border: 0;
+        display: block;
+        background: #000;
+      }
+      .pv-state {
+        aspect-ratio: 16/9;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        color: var(--mut);
+        background: var(--inset);
+      }
+      .spinner {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        border: 2.5px solid var(--line-2);
+        border-top-color: var(--iris);
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .pv-live-tag {
+        position: absolute;
+        top: 10px;
+        left: 12px;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--fg);
+        background: rgba(11, 12, 15, 0.7);
+        backdrop-filter: blur(6px);
+        border: 1px solid var(--line-2);
+        border-radius: 99px;
+        padding: 4px 10px;
+      }
+      .pv-live-tag .beat {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--live);
+        box-shadow: 0 0 8px var(--live);
+      }
 
-  #toast{position:fixed;right:18px;bottom:18px;z-index:50;background:var(--surface);
-    border:1px solid var(--line-2);border-radius:11px;padding:11px 15px;max-width:440px;
-    font-size:13px;line-height:1.45;white-space:pre-wrap;opacity:0;transform:translateY(10px);
-    transition:.22s ease;box-shadow:0 12px 40px rgba(0,0,0,.5)}
-  #toast.show{opacity:1;transform:none}
-  #toast.err{border-color:var(--alert);color:#ffbcbc}
+      /* ── agent console ───────────────────────────────────────────── */
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .card h3 {
+        font-size: 13px;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--fg);
+        margin-bottom: 12px;
+      }
+      textarea.prompt {
+        width: 100%;
+        resize: vertical;
+        min-height: 74px;
+        line-height: 1.5;
+      }
+      .rowend {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin-top: 10px;
+      }
+      .log {
+        height: 220px;
+        overflow: auto;
+        margin-top: 14px;
+        background: var(--inset);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 12px 14px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.6;
+        display: none;
+      }
+      .log.show {
+        display: block;
+      }
+      .log .ln {
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .log .assistant {
+        color: var(--fg);
+      }
+      .log .tool {
+        color: var(--iris);
+      }
+      .log .system,
+      .log .start,
+      .log .end {
+        color: var(--dim);
+      }
+      .log .result {
+        color: var(--live);
+      }
+      .log .error {
+        color: var(--alert);
+      }
 
-  @media (max-width:620px){
-    .strip{flex-wrap:wrap}.strip .acts{width:100%;justify-content:flex-end}
-    select{min-width:0;flex:1}
-  }
-  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-</style>
-</head>
-<body>
-<header class="bar">
-  <div class="mark"><span class="glyph"></span>hyperframes<span class="sub">console</span></div>
-  <div class="live" id="live"><span class="beat"></span><span id="liveText">connecting…</span></div>
-  <span class="grow"></span>
-  <label class="toggle"><input type="checkbox" id="autopoll" checked>auto</label>
-  <button class="btn ghost sm" id="refresh">Refresh</button>
-</header>
+      /* ── advanced drawer ─────────────────────────────────────────── */
+      .drawer-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(2px);
+      }
+      .drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        z-index: 41;
+        height: 100vh;
+        width: min(560px, 94vw);
+        background: var(--bg);
+        border-left: 1px solid var(--line-2);
+        box-shadow: -24px 0 60px rgba(0, 0, 0, 0.5);
+        display: flex;
+        flex-direction: column;
+        overflow: auto;
+      }
+      .drawer-head {
+        position: sticky;
+        top: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(11, 12, 15, 0.9);
+        backdrop-filter: blur(10px);
+      }
+      .drawer-head h2 {
+        font-size: 15px;
+        font-weight: 640;
+      }
+      .drawer-body {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+      }
+      .adv-sec {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .adv-sec .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .adv-sec .eyebrow h3 {
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--fg);
+      }
+      .adv-sec .eyebrow .rt {
+        margin-left: auto;
+      }
 
-<main>
-  <section class="block">
-    <div class="eyebrow"><h2>Environment</h2><span class="tick" id="doctorTick"></span>
-      <button class="btn ghost sm rt" id="doctorBtn">Run doctor</button></div>
-    <div id="doctor" class="doctor"><div class="empty">Bootstrap check — bun on PATH, git identity, whisper models. Prefetch big models from a terminal: <span class="mono">./scripts/dev-ui.sh doctor --prefetch</span></div></div>
-  </section>
+      /* servers strips */
+      .strips {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      .strip {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        position: relative;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        padding: 12px 14px 12px 16px;
+        overflow: hidden;
+      }
+      .strip::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--dim);
+      }
+      .strip.up::before {
+        background: var(--live);
+      }
+      .strip .who {
+        min-width: 0;
+        flex: 1;
+      }
+      .strip .name {
+        font-weight: 600;
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .strip .path {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--mut);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .strip .acts {
+        display: flex;
+        gap: 6px;
+        flex: none;
+      }
+      .tag {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--mut);
+        border: 1px solid var(--line-2);
+        border-radius: 6px;
+        padding: 3px 8px;
+        flex: none;
+      }
+      .tag.net {
+        color: var(--amber);
+        border-color: var(--amber-soft);
+        background: var(--amber-soft);
+      }
 
-  <section class="block">
-    <div class="eyebrow"><h2>Servers</h2><span class="tick" id="serversTick"></span>
-      <button class="btn danger sm rt" id="stopall">Stop all</button></div>
-    <div id="strips" class="strips"><div class="empty">Connecting…</div></div>
-  </section>
+      /* doctor */
+      .doctor {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .drow {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 8px 12px;
+        border-radius: 8px;
+      }
+      .drow + .drow {
+        border-top: 1px solid var(--line);
+      }
+      .drow .dmark {
+        font-weight: 700;
+        width: 14px;
+        flex: none;
+      }
+      .drow.ok .dmark {
+        color: var(--live);
+      }
+      .drow.bad .dmark {
+        color: var(--amber);
+      }
+      .drow .dname {
+        min-width: 110px;
+        flex: none;
+        color: var(--fg);
+        font-size: 13px;
+      }
+      .drow .ddetail {
+        color: var(--mut);
+        font-size: 13px;
+      }
+      .drow.bad .ddetail {
+        color: var(--fg);
+      }
+      .drow .dhint {
+        display: block;
+        color: var(--amber);
+        font-family: var(--mono);
+        font-size: 12px;
+        margin-top: 3px;
+      }
 
-  <section class="block">
-    <div class="eyebrow"><h2>Agent</h2></div>
-    <div class="card">
-      <div class="field">
-        <select id="agentProject" class="mono"></select>
-        <span class="hint">Edits the composition in this project. The preview reloads as it works.</span>
-      </div>
-      <textarea id="agentPrompt" placeholder="Tell the agent what to change — e.g. make the subtitles a little smaller and split the opening hook into two cues"></textarea>
-      <div class="rowend"><button class="btn primary" id="agentSend">Send</button></div>
-      <pre id="agentOut" class="term"></pre>
+      /* jobs */
+      .jobs {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .job {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 13px;
+      }
+      .job .k {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: #1b1e25;
+        color: var(--mut);
+        flex: none;
+        width: 78px;
+        text-align: center;
+      }
+      .job.render .k {
+        color: var(--amber);
+        background: var(--amber-soft);
+      }
+      .job.agent .k {
+        color: var(--iris);
+        background: var(--iris-soft);
+      }
+      .job .p {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--mut);
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .bar-wrap {
+        flex: 1.2;
+        min-width: 100px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .progress {
+        flex: 1;
+        height: 6px;
+        background: #1b1e25;
+        border-radius: 99px;
+        overflow: hidden;
+      }
+      .progress > i {
+        display: block;
+        height: 100%;
+        background: var(--amber);
+        border-radius: 99px;
+        transition: width 0.35s ease;
+      }
+      .st {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 6px;
+        flex: none;
+      }
+      .st.running {
+        color: var(--amber);
+        background: var(--amber-soft);
+      }
+      .st.done {
+        color: var(--live);
+        background: var(--live-soft);
+      }
+      .st.failed {
+        color: var(--alert);
+        background: var(--alert-soft);
+      }
+      .st.stopped {
+        color: var(--mut);
+        background: #1b1e25;
+      }
+
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--mut);
+        cursor: pointer;
+        user-select: none;
+        font-size: 13px;
+      }
+      .toggle input {
+        accent-color: var(--iris);
+        width: 15px;
+        height: 15px;
+      }
+      .warn {
+        background: var(--alert-soft);
+        border: 1px solid rgba(255, 107, 107, 0.32);
+        border-radius: 10px;
+        padding: 11px 15px;
+        font-size: 12.5px;
+        color: #ffb4b4;
+        line-height: 1.5;
+        margin-top: 10px;
+      }
+      .empty {
+        color: var(--mut);
+        font-size: 13px;
+        padding: 16px;
+        text-align: center;
+        border: 1px dashed var(--line-2);
+        border-radius: 10px;
+      }
+
+      #toast {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 60;
+        background: var(--surface);
+        border: 1px solid var(--line-2);
+        border-radius: 11px;
+        padding: 11px 15px;
+        max-width: 440px;
+        font-size: 13px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: 0.22s ease;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+      }
+      #toast.show {
+        opacity: 1;
+        transform: none;
+      }
+      #toast.err {
+        border-color: var(--alert);
+        color: #ffbcbc;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="rail" id="rail"></aside>
+      <section class="canvas" id="canvas"></section>
     </div>
-  </section>
+    <div id="drawer-root"></div>
+    <div id="toast"></div>
 
-  <section class="block">
-    <div class="eyebrow"><h2>Jobs</h2><span class="tick" id="jobsTick"></span></div>
-    <div class="jobbar">
-      <select id="renderProject" class="mono"></select>
-      <button class="btn ghost" id="renderBtn">Render to MP4</button>
-      <span class="hint">Renders and agent runs appear here with live progress.</span>
-    </div>
-    <div id="jobs" class="jobs"><div class="empty">Nothing running.</div></div>
-  </section>
+    <script>
+      const $ = (s, r = document) => r.querySelector(s);
+      const POST = (obj) => ({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(obj),
+      });
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const now = () =>
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
 
-  <section class="block">
-    <div class="eyebrow"><h2>Launch</h2></div>
-    <div class="card">
-      <div class="seg">
-        <button data-tab="start" class="on">Start</button>
-        <button data-tab="create">Create</button>
+      // ── app state ────────────────────────────────────────────────────
+      const state = {
+        selected: null, // repo-relative project path, or null → front door
+        projects: [], // [{name,path,source}]
+        status: { instances: [], host: "" },
+        recentOrder: [], // project paths, most-recent last (LRU)
+        preview: {}, // project path → {state:'starting'|'live'|'failed', url}
+        exposeAdvanced: true, // expose toggle lives in the drawer now
+        drawerOpen: false,
+        agentBusy: false, // don't clobber a running agent log on poll
+      };
+
+      function toast(msg, err = false) {
+        const t = $("#toast");
+        t.textContent = msg;
+        t.className = "show" + (err ? " err" : "");
+        clearTimeout(t._h);
+        t._h = setTimeout(() => {
+          t.className = "";
+        }, 4200);
+      }
+      async function api(path, opts = {}) {
+        const r = await fetch(path, opts);
+        let j = {};
+        try {
+          j = await r.json();
+        } catch {}
+        if (!r.ok || j.ok === false)
+          throw new Error(String(j.output || j.error || "HTTP " + r.status).trim());
+        return j;
+      }
+
+      // user-facing videos only; examples are starter templates, not the library
+      const userProjects = () => state.projects.filter((p) => p.source !== "example");
+      const instanceFor = (path) => state.status.instances.find((i) => i.project === path) || null;
+      const isUp = (path) => {
+        const i = instanceFor(path);
+        return !!(i && i.up);
+      };
+
+      // ── data loads ───────────────────────────────────────────────────
+      async function loadProjects() {
+        try {
+          state.projects = (await api("/api/projects")).projects || [];
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+      async function loadStatus() {
+        try {
+          state.status = await api("/api/status");
+        } catch (e) {
+          if (e.message !== "unauthorized") toast("Couldn’t reach the manager: " + e.message, true);
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      //  RAIL
+      // ═══════════════════════════════════════════════════════════════════
+      function renderRail() {
+        const rail = $("#rail");
+        const vids = userProjects();
+        const list = vids.length
+          ? vids
+              .map((p) => {
+                const on = state.selected === p.path;
+                return `<button class="vid ${isUp(p.path) ? "up" : ""} ${on ? "on" : ""}" data-path="${esc(p.path)}">
+          <span class="dot"></span>
+          <span class="vname">${esc(p.name)}</span>
+        </button>`;
+              })
+              .join("")
+          : `<div class="rail-empty">No videos yet. Make your first one above.</div>`;
+
+        rail.innerHTML = `
+    <div class="brand"><span class="glyph"></span>hyperframes</div>
+    <button class="btn primary newbtn" id="railNew">＋  New video</button>
+    <div class="rail-label">Your videos</div>
+    <div class="vids">${list}</div>
+    <div class="foot">
+      <button class="btn ghost gear" id="railGear">⚙  Setup &amp; advanced</button>
+    </div>`;
+
+        $("#railNew").onclick = () => {
+          state.selected = null;
+          openCreateFlow();
+        };
+        $("#railGear").onclick = openDrawer;
+        rail
+          .querySelectorAll(".vid")
+          .forEach((b) => (b.onclick = () => selectVideo(b.dataset.path)));
+      }
+
+      // refresh only the rail live-dots without rebuilding (poll-safe)
+      function refreshRailDots() {
+        document.querySelectorAll("#rail .vid").forEach((b) => {
+          b.classList.toggle("up", isUp(b.dataset.path));
+        });
+      }
+
+      function selectVideo(path) {
+        state.selected = path;
+        // LRU: move to most-recent
+        state.recentOrder = state.recentOrder.filter((p) => p !== path);
+        state.recentOrder.push(path);
+        renderRail();
+        renderCanvas();
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      //  CANVAS DISPATCH
+      // ═══════════════════════════════════════════════════════════════════
+      function renderCanvas() {
+        const c = $("#canvas");
+        if (!state.selected) return renderFrontDoor(c);
+        return renderWorkspace(c);
+      }
+
+      // ── front door (empty canvas) ────────────────────────────────────
+      function renderFrontDoor(c) {
+        const hasVideos = userProjects().length > 0;
+        c.innerHTML = `
+    <div class="door">
+      <h1>What do you want to do?</h1>
+      <p class="lede">Make a brand-new video from scratch, or open one you’ve already started to keep editing it.</p>
+      <div class="cards">
+        <button class="startcard" id="doorCreate">
+          <span class="ic">✦</span>
+          <h3>Make a new video</h3>
+          <p>Start blank or from a template, pick a size, and open its workspace.</p>
+        </button>
+        <button class="startcard alt" id="doorEdit" ${hasVideos ? "" : "disabled"}>
+          <span class="ic">✎</span>
+          <h3>Edit a video I have</h3>
+          <p>${hasVideos ? "Pick one from “Your videos” on the left to open it." : "No videos yet — make one first."}</p>
+        </button>
       </div>
-      <div id="tab-start" class="tab on" style="margin-top:14px">
-        <select id="startProject" class="mono"></select>
-        <button class="btn primary" id="startBtn">Start server</button>
-        <label class="toggle"><input type="checkbox" id="exposeGlobal" checked>Expose to network</label>
+    </div>`;
+        $("#doorCreate").onclick = openCreateFlow;
+        const edit = $("#doorEdit");
+        if (hasVideos)
+          edit.onclick = () => {
+            toast("Pick a video from the left rail →");
+            $("#rail .vids").scrollIntoView({ behavior: "smooth" });
+          };
+      }
+
+      // ── create flow ──────────────────────────────────────────────────
+      function openCreateFlow() {
+        const c = $("#canvas");
+        const examples = state.projects.filter((p) => p.source === "example").map((p) => p.name);
+        const startOpts = ["blank", ...examples]
+          .map((e) => `<option value="${esc(e)}">${esc(e)}</option>`)
+          .join("");
+        c.innerHTML = `
+    <div class="panel" style="max-width:520px">
+      <h2>Make a new video</h2>
+      <p class="sub">Scaffolds <span class="mono">projects/&lt;name&gt;</span> and opens its workspace.</p>
+      <div class="formrow">
+        <label for="cfName">Name</label>
+        <input id="cfName" class="mono" placeholder="my-video" autocomplete="off">
       </div>
-      <div id="tab-create" class="tab" style="margin-top:14px">
-        <input id="newName" class="mono" placeholder="project-name" style="min-width:180px">
-        <select id="newExample" title="starter"></select>
-        <select id="newRes" title="resolution">
-          <option value="1080p">landscape 1080p</option>
-          <option value="portrait">portrait 1080×1920</option>
-          <option value="square">square</option>
-          <option value="4k">landscape 4k</option>
+      <div class="formrow">
+        <label for="cfStart">Start from</label>
+        <select id="cfStart">${startOpts}</select>
+      </div>
+      <div class="formrow">
+        <label for="cfRes">Size</label>
+        <select id="cfRes">
+          <option value="1080p">Landscape · 1080p</option>
+          <option value="portrait">Portrait · 1080×1920</option>
+          <option value="square">Square · 1080×1080</option>
+          <option value="4k">Landscape · 4K</option>
         </select>
-        <button class="btn ghost" id="createBtn">Create</button>
-        <button class="btn primary" id="createStartBtn">Create &amp; start</button>
       </div>
-      <p class="hint" style="margin-top:12px">A server is the full Studio editor bound to one project. Create scaffolds <span class="mono">projects/&lt;name&gt;</span>.</p>
+      <div class="formactions">
+        <button class="btn primary" id="cfCreate">Create video</button>
+        <button class="btn ghost" id="cfCancel">Cancel</button>
+      </div>
+    </div>`;
+        $("#cfName").focus();
+        $("#cfCancel").onclick = () => renderCanvas();
+        $("#cfCreate").onclick = doCreate;
+        $("#cfName").addEventListener("keydown", (e) => {
+          if (e.key === "Enter") doCreate();
+        });
+      }
+      async function doCreate() {
+        const name = $("#cfName").value.trim();
+        if (!/^[a-zA-Z0-9_-]+$/.test(name))
+          return toast("Name: letters, digits, - and _ only", true);
+        const btn = $("#cfCreate");
+        btn.disabled = true;
+        btn.textContent = "Creating…";
+        try {
+          await api(
+            "/api/create",
+            POST({
+              name,
+              example: $("#cfStart").value,
+              resolution: $("#cfRes").value,
+              start: true,
+            }),
+          );
+          await loadProjects();
+          selectVideo("projects/" + name);
+          toast("Created " + name);
+        } catch (e) {
+          toast(e.message, true);
+          btn.disabled = false;
+          btn.textContent = "Create video";
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      //  WORKSPACE
+      // ═══════════════════════════════════════════════════════════════════
+      const FMT_LABEL = {
+        "1080p": "landscape",
+        portrait: "portrait",
+        square: "square",
+        "4k": "4K",
+      };
+
+      function renderWorkspace(c) {
+        const path = state.selected;
+        const proj = state.projects.find((p) => p.path === path);
+        const name = proj ? proj.name : path.split("/").pop();
+        const inst = instanceFor(path);
+        const chip =
+          inst && inst.up
+            ? `<span class="chip">running :${inst.port}</span>`
+            : `<span class="chip local">preview</span>`;
+
+        c.innerHTML = `
+    <div class="ws-head">
+      <span class="title">${esc(name)}</span>
+      ${chip}
+      <span class="spacer"></span>
+      <a class="btn ghost sm" id="wsOpen" target="_blank" rel="noopener" href="#">Open full editor ↗</a>
+      <button class="btn primary sm" id="wsExport">Export MP4</button>
     </div>
-  </section>
+    <div class="ws-grid">
+      <div class="preview" id="wsPreview"></div>
+      <div class="card" id="wsAgent"></div>
+    </div>`;
 
-  <div class="warn" id="exposeWarn" hidden></div>
-</main>
-<div id="toast"></div>
+        $("#wsExport").onclick = () => exportMp4(path);
+        renderPreview(path);
+        renderAgent($("#wsAgent"), path);
+      }
 
-<script>
-const $ = (s) => document.querySelector(s);
-let pollTimer = null;
-const POST = (obj) => ({ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(obj) });
+      // draw the preview region for its current state
+      function renderPreviewState(path) {
+        const box = $("#wsPreview");
+        if (!box || state.selected !== path) return;
+        const pv = state.preview[path] || { state: "starting" };
+        const open = $("#wsOpen");
+        if (pv.url && open) {
+          open.href = pv.url;
+        }
+        if (pv.state === "live" && pv.url) {
+          box.innerHTML = `
+      <span class="pv-live-tag"><span class="beat"></span>live · reloads on edit</span>
+      <iframe class="frame" src="${esc(pv.url)}" title="preview of ${esc(path)}"></iframe>`;
+        } else if (pv.state === "failed") {
+          box.innerHTML = `<div class="pv-state">
+      <div>Preview didn’t start.</div>
+      <button class="btn sm" id="pvRetry">Retry</button>
+    </div>`;
+          $("#pvRetry").onclick = () => {
+            state.preview[path] = { state: "starting" };
+            renderPreviewState(path);
+            ensurePreview(path);
+          };
+        } else {
+          box.innerHTML = `<div class="pv-state"><span class="spinner"></span><div>Starting preview…</div></div>`;
+        }
+      }
 
-function toast(msg, err=false){
-  const t = $("#toast"); t.textContent = msg; t.className = "show" + (err ? " err" : "");
-  clearTimeout(t._h); t._h = setTimeout(()=>{ t.className=""; }, 4200);
-}
-async function api(path, opts={}){
-  const r = await fetch(path, opts);
-  let j = {}; try { j = await r.json(); } catch {}
-  if(!r.ok || j.ok === false) throw new Error(String(j.output||j.error||("HTTP "+r.status)).trim());
-  return j;
-}
-const esc = (s)=>String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const now = ()=> new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+      function renderPreview(path) {
+        const known = state.preview[path];
+        // if we already know it's live and the server is still up, reuse
+        if (known && known.state === "live" && isUp(path)) {
+          renderPreviewState(path);
+          return;
+        }
+        state.preview[path] = { state: "starting" };
+        renderPreviewState(path);
+        ensurePreview(path);
+      }
 
-/* ── servers ── */
-async function refresh(){
-  try {
-    const { instances, host } = await api("/api/status");
-    const up = instances.filter(i=>i.up).length;
-    $("#live").className = "live" + (up ? " on" : "");
-    $("#liveText").textContent = (up ? up+" live" : "idle") + " · via " + host;
-    const el = $("#strips");
-    if(!instances.length){ el.innerHTML = '<div class="empty">No servers running. Launch one below.</div>'; }
-    else el.innerHTML = instances.map(i=>`
-      <div class="strip ${i.up?"up":""}">
-        <span class="beat"></span>
-        <div class="who">
-          <div class="name">${esc(i.project.split("/").pop())}</div>
-          <div class="path">${esc(i.project)}</div>
+      // start the project's server if needed, poll until up, then show the iframe
+      async function ensurePreview(path) {
+        try {
+          const up = instanceFor(path);
+          if (up && up.up) {
+            state.preview[path] = { state: "live", url: up.url };
+            renderPreviewState(path);
+            reapLRU();
+            return;
+          }
+          await api("/api/start", POST({ project: path, expose: false }));
+          const deadline = Date.now() + 20000;
+          while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 900));
+            await loadStatus();
+            refreshRailDots();
+            const inst = instanceFor(path);
+            if (inst && inst.up) {
+              state.preview[path] = { state: "live", url: inst.url };
+              renderPreviewState(path);
+              reapLRU();
+              return;
+            }
+          }
+          state.preview[path] = { state: "failed" };
+          renderPreviewState(path);
+        } catch (e) {
+          state.preview[path] = { state: "failed" };
+          renderPreviewState(path);
+          toast("Preview failed: " + e.message, true);
+        }
+      }
+
+      // keep the 3 most-recently-opened previews alive; stop the rest
+      async function reapLRU() {
+        const keep = new Set(state.recentOrder.slice(-3));
+        for (const inst of state.status.instances) {
+          if (inst.up && !keep.has(inst.project)) {
+            try {
+              await api("/api/stop", POST({ target: String(inst.port) }));
+              delete state.preview[inst.project];
+            } catch {
+              /* best-effort */
+            }
+          }
+        }
+        await loadStatus();
+        refreshRailDots();
+      }
+
+      async function exportMp4(path) {
+        try {
+          const r = await api("/api/jobs/render", POST({ project: path }));
+          toast("Export started · " + r.id);
+          openDrawer();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      // ── agent panel with fixed-height, capped, pinned-scroll log ──────
+      const PREFIX = { tool: "", system: "", start: "▸ ", end: "■ ", result: "✓ ", error: "✕ " };
+      const LOG_MAX = 500;
+      function appendLine(out, cls, text) {
+        const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 24;
+        const d = document.createElement("div");
+        d.className = "ln " + cls;
+        d.textContent = (PREFIX[cls] || "") + text;
+        out.appendChild(d);
+        while (out.childElementCount > LOG_MAX) out.removeChild(out.firstElementChild);
+        if (atBottom) out.scrollTop = out.scrollHeight; // only auto-scroll if pinned
+      }
+
+      function renderAgent(card, path) {
+        card.innerHTML = `
+    <h3>Agent</h3>
+    <p class="hint" style="margin-bottom:10px">Tell the agent what to change. The preview reloads as it works.</p>
+    <textarea class="prompt" id="agPrompt" placeholder="e.g. make the subtitles a little smaller and split the opening hook into two cues"></textarea>
+    <div class="rowend">
+      <span class="hint" id="agHint"></span>
+      <button class="btn primary" id="agSend">Send</button>
+    </div>
+    <div class="log" id="agLog"></div>`;
+        $("#agSend").onclick = () => sendAgent(path);
+      }
+
+      async function sendAgent(path) {
+        const prompt = $("#agPrompt").value.trim();
+        if (!prompt) return toast("Type a prompt first", true);
+        const out = $("#agLog");
+        out.classList.add("show");
+        out.innerHTML = "";
+        const btn = $("#agSend");
+        btn.disabled = true;
+        btn.textContent = "Working…";
+        state.agentBusy = true;
+        try {
+          const r = await fetch("/api/agent", POST({ project: path, prompt }));
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            throw new Error(j.error || "HTTP " + r.status);
+          }
+          const reader = r.body.getReader(),
+            dec = new TextDecoder();
+          let buf = "";
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let i;
+            while ((i = buf.indexOf("\n\n")) >= 0) {
+              const chunk = buf.slice(0, i);
+              buf = buf.slice(i + 2);
+              const m = chunk.match(/^data: (.*)$/s);
+              if (!m) continue;
+              try {
+                const e = JSON.parse(m[1]);
+                appendLine(out, e.t === "assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text);
+              } catch {}
+            }
+          }
+        } catch (e) {
+          appendLine(out, "error", e.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Send";
+          state.agentBusy = false;
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      //  SETUP & ADVANCED DRAWER  (servers / doctor / jobs / expose)
+      // ═══════════════════════════════════════════════════════════════════
+      function openDrawer() {
+        state.drawerOpen = true;
+        renderDrawer();
+      }
+      function closeDrawer() {
+        state.drawerOpen = false;
+        $("#drawer-root").innerHTML = "";
+      }
+
+      function renderDrawer() {
+        const root = $("#drawer-root");
+        root.innerHTML = `
+    <div class="drawer-scrim" id="drawerScrim"></div>
+    <aside class="drawer">
+      <div class="drawer-head">
+        <h2>Setup &amp; advanced</h2>
+        <span style="flex:1"></span>
+        <button class="btn ghost sm" id="drawerRefresh">Refresh</button>
+        <button class="btn ghost sm" id="drawerClose">Close ✕</button>
+      </div>
+      <div class="drawer-body">
+        <div class="adv-sec">
+          <div class="eyebrow"><h3>Servers</h3><span class="tick hint" id="serversTick"></span>
+            <button class="btn danger sm rt" id="stopall">Stop all</button></div>
+          <div id="strips" class="strips"></div>
         </div>
-        <span class="chip">:${i.port}</span>
-        <span class="tag ${i.expose?"net":""}">${i.expose?"network":"local"}</span>
-        <div class="acts">
-          ${i.up?`<a class="btn primary sm" href="${esc(i.url)}" target="_blank" rel="noopener">Open Studio ↗</a>`:""}
-          <button class="btn ghost sm" onclick="doRestart('${i.port}')">Restart</button>
-          <button class="btn danger sm" onclick="doStop('${i.port}')">Stop</button>
+        <div class="adv-sec">
+          <div class="eyebrow"><h3>Environment</h3><span class="tick hint" id="doctorTick"></span>
+            <button class="btn ghost sm rt" id="doctorBtn">Run doctor</button></div>
+          <div id="doctor" class="doctor"><div class="empty">Bootstrap check — bun on PATH, git identity, whisper models. Prefetch big models from a terminal: <span class="mono">./scripts/dev-ui.sh doctor --prefetch</span></div></div>
         </div>
-      </div>`).join("");
-    $("#serversTick").textContent = "updated " + now();
-  } catch(e){ if(e.message!=="unauthorized") toast("Couldn’t reach the manager: "+e.message, true); }
-}
-async function runDoctor(){
-  const el = $("#doctor"), btn = $("#doctorBtn");
-  btn.disabled = true; el.innerHTML = '<div class="empty">Running checks…</div>';
-  try{
-    const r = await api("/api/doctor", POST({}));
-    const checks = r.checks || [];
-    el.innerHTML = checks.map(c=>`
-      <div class="drow ${c.ok?"ok":"bad"}">
-        <span class="dmark">${c.ok?"✓":"✗"}</span>
+        <div class="adv-sec">
+          <div class="eyebrow"><h3>Jobs &amp; exports</h3><span class="tick hint" id="jobsTick"></span></div>
+          <div id="jobs" class="jobs"></div>
+        </div>
+        <div class="adv-sec">
+          <div class="eyebrow"><h3>Network</h3></div>
+          <label class="toggle"><input type="checkbox" id="exposeGlobal" ${state.exposeAdvanced ? "checked" : ""}>Expose servers to network</label>
+          <div class="warn" id="exposeWarn" hidden></div>
+        </div>
+      </div>
+    </aside>`;
+        $("#drawerScrim").onclick = closeDrawer;
+        $("#drawerClose").onclick = closeDrawer;
+        $("#drawerRefresh").onclick = () => {
+          refreshServers();
+          pollJobs();
+        };
+        $("#stopall").onclick = () => doStop("all");
+        $("#doctorBtn").onclick = runDoctor;
+        $("#exposeGlobal").onchange = (e) => {
+          state.exposeAdvanced = e.target.checked;
+          updateWarn();
+        };
+        updateWarn();
+        refreshServers();
+        pollJobs();
+      }
+
+      function refreshServers() {
+        const el = $("#strips");
+        if (!el) return;
+        const inst = state.status.instances;
+        if (!inst.length) {
+          el.innerHTML = '<div class="empty">No servers running.</div>';
+        } else
+          el.innerHTML = inst
+            .map(
+              (i) => `
+    <div class="strip ${i.up ? "up" : ""}">
+      <div class="who">
+        <div class="name">${esc(i.project.split("/").pop())}</div>
+        <div class="path">${esc(i.project)} · :${i.port}</div>
+      </div>
+      <span class="tag ${i.expose ? "net" : ""}">${i.expose ? "network" : "local"}</span>
+      <div class="acts">
+        ${i.up ? `<a class="btn ghost sm" href="${esc(i.url)}" target="_blank" rel="noopener">Open ↗</a>` : ""}
+        <button class="btn ghost sm" data-restart="${i.port}">Restart</button>
+        <button class="btn danger sm" data-stop="${i.port}">Stop</button>
+      </div>
+    </div>`,
+            )
+            .join("");
+        el.querySelectorAll("[data-stop]").forEach(
+          (b) => (b.onclick = () => doStop(b.dataset.stop)),
+        );
+        el.querySelectorAll("[data-restart]").forEach(
+          (b) => (b.onclick = () => doRestart(b.dataset.restart)),
+        );
+        const tick = $("#serversTick");
+        if (tick) tick.textContent = "updated " + now();
+      }
+      async function doStop(t) {
+        try {
+          await api("/api/stop", POST({ target: t }));
+          toast("Stopped " + t);
+          await loadStatus();
+          refreshServers();
+          refreshRailDots();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+      async function doRestart(t) {
+        try {
+          toast("Restarting " + t + "…");
+          await api("/api/restart", POST({ target: t }));
+          toast("Restarted " + t);
+          await loadStatus();
+          refreshServers();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
+
+      async function runDoctor() {
+        const el = $("#doctor"),
+          btn = $("#doctorBtn");
+        if (!el) return;
+        btn.disabled = true;
+        el.innerHTML = '<div class="empty">Running checks…</div>';
+        try {
+          const r = await api("/api/doctor", POST({}));
+          const checks = r.checks || [];
+          el.innerHTML = checks
+            .map(
+              (c) => `
+      <div class="drow ${c.ok ? "ok" : "bad"}">
+        <span class="dmark">${c.ok ? "✓" : "✗"}</span>
         <span class="dname mono">${esc(c.name)}</span>
-        <span class="ddetail">${esc(c.detail)}${c.hint?`<span class="dhint">→ ${esc(c.hint)}</span>`:""}</span>
-      </div>`).join("");
-    $("#doctorTick").textContent = (r.ok?"all good":"needs attention")+" · "+now();
-  }catch(e){ el.innerHTML = '<div class="empty">Doctor failed: '+esc(e.message)+'</div>'; }
-  finally{ btn.disabled = false; }
-}
-async function doStop(t){ try{ await api("/api/stop", POST({target:t})); toast("Stopped "+t); refresh(); }catch(e){ toast(e.message,true);} }
-async function doRestart(t){ try{ toast("Restarting "+t+"…"); await api("/api/restart", POST({target:t})); toast("Restarted "+t); refresh(); }catch(e){ toast(e.message,true);} }
+        <span class="ddetail">${esc(c.detail)}${c.hint ? `<span class="dhint">→ ${esc(c.hint)}</span>` : ""}</span>
+      </div>`,
+            )
+            .join("");
+          $("#doctorTick").textContent = (r.ok ? "all good" : "needs attention") + " · " + now();
+        } catch (e) {
+          el.innerHTML = '<div class="empty">Doctor failed: ' + esc(e.message) + "</div>";
+        } finally {
+          btn.disabled = false;
+        }
+      }
 
-/* ── projects into every selector ── */
-async function loadProjects(){
-  try{
-    const { projects } = await api("/api/projects");
-    const opts = projects.map(p=>`<option value="${esc(p.path)}">${esc(p.name)} · ${p.source}</option>`).join("");
-    ["#startProject","#agentProject","#renderProject"].forEach(s=>{ $(s).innerHTML = opts; });
-    const examples = ["blank", ...projects.filter(p=>p.source==="example").map(p=>p.name)];
-    $("#newExample").innerHTML = examples.map(e=>`<option value="${esc(e)}">${esc(e)}</option>`).join("");
-  }catch(e){ toast(e.message,true); }
-}
-
-/* ── jobs ── */
-const fmt = (ms)=>{ const s=Math.floor(ms/1000); return s<60?s+"s":Math.floor(s/60)+"m"+String(s%60).padStart(2,"0"); };
-async function pollJobs(){
-  try{
-    const { jobs } = await api("/api/jobs");
-    const el = $("#jobs");
-    if(!jobs.length){ el.innerHTML = '<div class="empty">Nothing running.</div>'; }
-    else el.innerHTML = jobs.map(j=>{
-      const end = j.endedAt || Date.now();
-      const prog = j.pct!=null
-        ? `<div class="bar-wrap"><span class="progress"><i style="width:${j.pct}%"></i></span><span class="t">${j.pct}%</span></div>`
-        : `<span class="p">${esc((j.lastLine||"").slice(0,60))||"—"}</span>`;
-      return `<div class="job ${esc(j.kind)}">
+      const fmt = (ms) => {
+        const s = Math.floor(ms / 1000);
+        return s < 60 ? s + "s" : Math.floor(s / 60) + "m" + String(s % 60).padStart(2, "0");
+      };
+      async function pollJobs() {
+        const el = $("#jobs");
+        if (!el) return;
+        try {
+          const { jobs } = await api("/api/jobs");
+          if (!jobs.length) {
+            el.innerHTML = '<div class="empty">Nothing running.</div>';
+          } else
+            el.innerHTML = jobs
+              .map((j) => {
+                const end = j.endedAt || Date.now();
+                const prog =
+                  j.pct != null
+                    ? `<div class="bar-wrap"><span class="progress"><i style="width:${j.pct}%"></i></span><span class="p">${j.pct}%</span></div>`
+                    : `<span class="p">${esc((j.lastLine || "").slice(0, 50)) || "—"}</span>`;
+                return `<div class="job ${esc(j.kind)}">
         <span class="k">${esc(j.kind)}</span>
         <span class="p">${esc(j.project.split("/").pop())}</span>
         ${prog}
-        <span class="st ${j.state==="running"?"running":esc(j.state)}">${esc(j.state)}</span>
-        <span class="t">${fmt(end-j.startedAt)}</span>
-        ${j.state==="running"?`<button class="btn danger sm" onclick="stopJob('${j.id}')">Stop</button>`:""}
+        <span class="st ${j.state === "running" ? "running" : esc(j.state)}">${esc(j.state)}</span>
+        ${j.state === "running" ? `<button class="btn danger sm" data-jobstop="${j.id}">Stop</button>` : ""}
       </div>`;
-    }).join("");
-    $("#jobsTick").textContent = jobs.length ? "updated "+now() : "";
-  }catch(e){ /* best-effort */ }
-}
-async function stopJob(id){ try{ await api("/api/jobs/stop", POST({id})); pollJobs(); }catch(e){ toast(e.message,true);} }
-async function startRender(){
-  try{ const r = await api("/api/jobs/render", POST({project:$("#renderProject").value})); toast("Render started · "+r.id); pollJobs(); }
-  catch(e){ toast(e.message,true); }
-}
-
-/* ── agent (SSE) ── */
-const PREFIX = { tool:"", system:"", start:"▸ ", end:"■ ", result:"✓ ", error:"✕ " };
-async function sendAgent(){
-  const project = $("#agentProject").value, prompt = $("#agentPrompt").value.trim();
-  if(!prompt) return toast("Type a prompt first", true);
-  const out = $("#agentOut"); out.style.display="block"; out.innerHTML="";
-  const line = (cls,text)=>{ const d=document.createElement("div"); d.className="ln "+cls; d.textContent=(PREFIX[cls]||"")+text; out.appendChild(d); out.scrollTop=out.scrollHeight; };
-  const btn = $("#agentSend"); btn.disabled = true; btn.textContent = "Working…";
-  try{
-    const r = await fetch("/api/agent", POST({project, prompt}));
-    if(!r.ok){ const j = await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
-    const reader = r.body.getReader(), dec = new TextDecoder(); let buf="";
-    for(;;){
-      const { done, value } = await reader.read(); if(done) break;
-      buf += dec.decode(value,{stream:true});
-      let i; while((i=buf.indexOf("\n\n"))>=0){
-        const chunk = buf.slice(0,i); buf = buf.slice(i+2);
-        const m = chunk.match(/^data: (.*)$/s); if(!m) continue;
-        try{ const e = JSON.parse(m[1]); line(e.t==="assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text); }catch{}
+              })
+              .join("");
+          el.querySelectorAll("[data-jobstop]").forEach(
+            (b) => (b.onclick = () => stopJob(b.dataset.jobstop)),
+          );
+          const tick = $("#jobsTick");
+          if (tick) tick.textContent = jobs.length ? "updated " + now() : "";
+        } catch {
+          /* best-effort */
+        }
       }
-    }
-    pollJobs();
-  }catch(e){ line("error", e.message); }
-  finally{ btn.disabled = false; btn.textContent = "Send"; }
-}
+      async function stopJob(id) {
+        try {
+          await api("/api/jobs/stop", POST({ id }));
+          pollJobs();
+        } catch (e) {
+          toast(e.message, true);
+        }
+      }
 
-/* ── launch ── */
-async function create(start){
-  const name = $("#newName").value.trim();
-  if(!/^[a-zA-Z0-9_-]+$/.test(name)) return toast("Name: letters, digits, - and _ only", true);
-  try{
-    toast((start?"Creating & starting ":"Creating ")+name+"…");
-    await api("/api/create", POST({name, example:$("#newExample").value, resolution:$("#newRes").value, start, expose:expose()}));
-    toast((start?"Created & started ":"Created ")+name); $("#newName").value="";
-    await loadProjects(); refresh();
-  }catch(e){ toast(e.message,true); }
-}
-const expose = ()=> $("#exposeGlobal").checked;
-function updateWarn(){
-  const w = $("#exposeWarn");
-  if(expose()){ w.hidden=false; w.textContent = "Expose is on — servers bind 0.0.0.0, so anyone who can reach this box can use their unauthenticated file and render API. Turn it off for localhost only."; }
-  else w.hidden = true;
-}
+      function updateWarn() {
+        const w = $("#exposeWarn");
+        if (!w) return;
+        if (state.exposeAdvanced) {
+          w.hidden = false;
+          w.textContent =
+            "Expose is on — servers bind 0.0.0.0, so anyone who can reach this box can use their unauthenticated file and render API. Turn it off for localhost only.";
+        } else w.hidden = true;
+      }
 
-/* ── wiring ── */
-$("#stopall").onclick = ()=> doStop("all");
-$("#doctorBtn").onclick = runDoctor;
-$("#refresh").onclick = ()=>{ refresh(); pollJobs(); };
-$("#startBtn").onclick = async ()=>{
-  const project = $("#startProject").value;
-  try{ toast("Starting "+project+"…"); await api("/api/start", POST({project, expose:expose()})); toast("Started "+project); refresh(); }
-  catch(e){ toast(e.message,true); }
-};
-$("#renderBtn").onclick = startRender;
-$("#agentSend").onclick = sendAgent;
-$("#createBtn").onclick = ()=> create(false);
-$("#createStartBtn").onclick = ()=> create(true);
-$("#exposeGlobal").onchange = updateWarn;
-document.querySelectorAll(".seg button").forEach(b=> b.onclick = ()=>{
-  document.querySelectorAll(".seg button").forEach(x=>x.classList.toggle("on", x===b));
-  ["start","create"].forEach(t=> $("#tab-"+t).classList.toggle("on", t===b.dataset.tab));
-});
-function setPoll(on){
-  clearInterval(pollTimer); pollTimer=null;
-  if(on) pollTimer = setInterval(()=>{ refresh(); pollJobs(); }, 3000);
-}
-$("#autopoll").onchange = (e)=> setPoll(e.target.checked);
+      // ═══════════════════════════════════════════════════════════════════
+      //  BOOT + SCOPED POLLING
+      // ═══════════════════════════════════════════════════════════════════
+      async function boot() {
+        await Promise.all([loadProjects(), loadStatus()]);
+        renderRail();
+        renderCanvas();
+        setInterval(poll, 3000);
+      }
+      // poll refreshes only live state — never re-renders the canvas while the user
+      // is typing in the agent box / create form or an agent run is streaming.
+      async function poll() {
+        await loadStatus();
+        refreshRailDots();
+        // keep a "starting" preview honest, and reflect external server drops
+        const path = state.selected;
+        if (path && !state.agentBusy) {
+          const pv = state.preview[path];
+          if (pv && pv.state === "live" && !isUp(path)) {
+            renderPreview(path);
+          }
+        }
+        if (state.drawerOpen) {
+          refreshServers();
+          pollJobs();
+        }
+      }
 
-updateWarn(); loadProjects(); refresh(); pollJobs(); setPoll(true);
-</script>
-</body>
+      boot();
+    </script>
+  </body>
 </html>
