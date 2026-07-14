@@ -19,6 +19,7 @@ import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { mkdirSync, createWriteStream, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { readCaptions, approveCaptions, recompileComposition } from "./dev-ui-captions.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
@@ -359,6 +360,42 @@ async function postAgent(req, res) {
   req.on("close", () => {}); // keep the job running even if the browser tab closes
 }
 
+// ── caption verification gate (Cinematic-mode projects) ───────────────────────
+function getCaptions(req, res) {
+  const project = safeProjectPath(new URL(req.url, "http://x").searchParams.get("project"));
+  if (!project) return send(res, 400, { error: "unknown project" });
+  send(res, 200, readCaptions(join(REPO_ROOT, project)));
+}
+async function postCaptionsApprove(req, res) {
+  const b = await readBody(req);
+  const project = safeProjectPath(b.project);
+  if (!project) return send(res, 400, { ok: false, error: "unknown project" });
+  const dir = join(REPO_ROOT, project);
+  const result = await approveCaptions(dir, Array.isArray(b.edits) ? b.edits : []);
+  // a passing approval → best-effort refresh index.html so the preview updates
+  if (result.approved) {
+    const rc = await recompileComposition(dir);
+    result.recompiled = rc.ok;
+    if (!rc.ok) result.recompileError = rc.error;
+  }
+  send(res, 200, result);
+}
+async function postCaptionsRetranscribe(req, res) {
+  const b = await readBody(req);
+  const project = safeProjectPath(b.project);
+  if (!project) return send(res, 400, { ok: false, error: "unknown project" });
+  const job = startJob({
+    kind: "transcribe",
+    project,
+    cmd: "node",
+    args: [
+      join(REPO_ROOT, "skills/embedded-captions/scripts/transcribe.cjs"),
+      join(REPO_ROOT, project),
+    ],
+  });
+  send(res, 200, { ok: true, id: job.id });
+}
+
 const ROUTES = {
   "GET /": html,
   "GET /index.html": html,
@@ -376,6 +413,9 @@ const ROUTES = {
   "POST /api/jobs/stop": postJobStop,
   "POST /api/doctor": postDoctor,
   "POST /api/agent": postAgent,
+  "GET /api/captions": getCaptions,
+  "POST /api/captions/approve": postCaptionsApprove,
+  "POST /api/captions/retranscribe": postCaptionsRetranscribe,
 };
 
 const server = createServer(async (req, res) => {
