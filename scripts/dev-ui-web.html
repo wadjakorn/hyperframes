@@ -525,6 +525,116 @@
         box-shadow: 0 0 8px var(--live);
       }
 
+      /* ── caption verification gate ───────────────────────────────── */
+      .gate {
+        background: var(--surface);
+        border: 1px solid rgba(245, 181, 68, 0.35);
+        border-radius: 12px;
+        padding: 18px 20px;
+        margin-bottom: 20px;
+      }
+      .gate .cap-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+      .gate .cap-head h3 {
+        font-size: 14px;
+        font-weight: 660;
+        letter-spacing: -0.2px;
+      }
+      .gate .engine {
+        font-size: 11px;
+        color: var(--amber);
+        background: var(--amber-soft);
+        border: 1px solid rgba(245, 181, 68, 0.3);
+        border-radius: 6px;
+        padding: 2px 8px;
+      }
+      .cap-note {
+        color: var(--mut);
+        font-size: 12.5px;
+        line-height: 1.5;
+        margin-bottom: 14px;
+        max-width: 68ch;
+      }
+      .cues {
+        display: flex;
+        flex-direction: column;
+      }
+      .cue {
+        display: flex;
+        gap: 12px;
+        align-items: baseline;
+        padding: 7px 0;
+        border-top: 1px solid var(--line);
+      }
+      .cue .tc {
+        font-size: 11px;
+        color: var(--dim);
+        flex: none;
+        width: 46px;
+        padding-top: 3px;
+      }
+      .cue .words {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px 5px;
+        flex: 1;
+        min-width: 0;
+      }
+      .cw {
+        font-size: 13.5px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 1px 5px;
+        color: var(--fg);
+      }
+      .cw[contenteditable] {
+        cursor: text;
+      }
+      .cw[contenteditable]:hover {
+        border-color: var(--line-2);
+      }
+      .cw[contenteditable]:focus {
+        outline: none;
+        border-color: var(--iris-line);
+        background: var(--inset);
+      }
+      .cw.changed {
+        border-color: var(--iris-line);
+        background: var(--iris-soft);
+      }
+      .cw.ro {
+        color: var(--mut);
+      }
+      .gate-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 16px;
+      }
+      .fails {
+        margin-top: 12px;
+        background: var(--alert-soft);
+        border: 1px solid rgba(255, 107, 107, 0.32);
+        border-radius: 9px;
+        padding: 11px 13px;
+      }
+      .fails-h {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #ffb4b4;
+        margin-bottom: 6px;
+      }
+      .fail-line {
+        font-size: 11.5px;
+        color: #ffbcbc;
+        line-height: 1.6;
+        word-break: break-word;
+      }
+
       /* ── agent console ───────────────────────────────────────────── */
       .card {
         background: var(--surface);
@@ -966,6 +1076,7 @@
         selected: null, // repo-relative project path, or null → front door
         projects: [], // [{name,path,source}]
         examples: [], // scaffoldable starter template names
+        captions: {}, // project path → readCaptions() result (gate status)
         status: { instances: [], host: "" },
         recentOrder: [], // project paths, most-recent last (LRU)
         preview: {}, // project path → {state:'starting'|'live'|'failed', url}
@@ -1037,9 +1148,15 @@
           ? vids
               .map((p) => {
                 const on = state.selected === p.path;
+                const cap = state.captions[p.path];
+                const badge =
+                  cap && cap.isCaptionProject && !cap.approved
+                    ? `<span class="badge">review</span>`
+                    : "";
                 return `<button class="vid ${isUp(p.path) ? "up" : ""} ${on ? "on" : ""}" data-path="${esc(p.path)}">
           <span class="dot"></span>
           <span class="vname">${esc(p.name)}</span>
+          ${badge}
         </button>`;
               })
               .join("")
@@ -1216,14 +1333,156 @@
       <a class="btn ghost sm" id="wsOpen" target="_blank" rel="noopener" href="#">Open full editor ↗</a>
       <button class="btn primary sm" id="wsExport">Export MP4</button>
     </div>
+    <div id="wsGate"></div>
     <div class="ws-grid">
       <div class="preview" id="wsPreview"></div>
       <div class="card" id="wsAgent"></div>
     </div>`;
 
         $("#wsExport").onclick = () => exportMp4(path);
+        // lock export up-front if we already know captions need review (no flash)
+        const cap = state.captions[path];
+        if (cap && cap.isCaptionProject && !cap.approved) lockExport(true);
         renderPreview(path);
         renderAgent($("#wsAgent"), path);
+        refreshCaptionGate(path);
+      }
+
+      // ── subtitle verification gate (Cinematic-mode caption projects) ──────────
+      function lockExport(locked) {
+        const b = $("#wsExport");
+        if (!b) return;
+        b.disabled = locked;
+        b.textContent = locked ? "🔒 review captions" : "Export MP4";
+        b.title = locked ? "Approve captions to unlock export" : "";
+      }
+      function engineLabel(cap) {
+        if (!cap || !cap.engine) return "";
+        const e = cap.engine;
+        const name = e.startsWith("whisperx")
+          ? "WhisperX"
+          : e.startsWith("whisper.cpp")
+            ? "whisper.cpp"
+            : e;
+        const gran = cap.granularity === "word" ? "word-level" : cap.granularity || "";
+        return gran ? name + " · " + gran : name;
+      }
+      async function loadCaptions(path) {
+        try {
+          state.captions[path] = await api("/api/captions?project=" + encodeURIComponent(path));
+        } catch {
+          state.captions[path] = { isCaptionProject: false, approved: false, groups: [] };
+        }
+        return state.captions[path];
+      }
+      // fetch caption status for every user project once (drives rail badges)
+      async function loadCaptionFlags() {
+        await Promise.all(userProjects().map((p) => loadCaptions(p.path)));
+      }
+      // draw (or clear) the gate for a project and set the export lock
+      async function refreshCaptionGate(path) {
+        let cap = state.captions[path];
+        if (!cap) cap = await loadCaptions(path);
+        if (state.selected !== path) return;
+        const needsReview = cap.isCaptionProject && !cap.approved;
+        lockExport(needsReview);
+        const box = $("#wsGate");
+        if (!box) return;
+        if (needsReview) renderCaptionGate(box, path, cap);
+        else box.innerHTML = "";
+      }
+      function renderCaptionGate(box, path, cap) {
+        const cues = (cap.groups || [])
+          .map((g) => {
+            const tc = g.in != null ? g.in.toFixed(1) + "s" : "";
+            const words = (g.words || [])
+              .map((w) =>
+                w.ti != null
+                  ? `<span class="cw" contenteditable="true" data-ti="${w.ti}" data-orig="${esc(w.text)}">${esc(w.text)}</span>`
+                  : `<span class="cw ro">${esc(w.text)}</span>`,
+              )
+              .join(" ");
+            return `<div class="cue"><span class="tc mono">${tc}</span><span class="words">${words}</span></div>`;
+          })
+          .join("");
+        box.innerHTML = `
+    <div class="gate">
+      <div class="cap-head">
+        <h3>Review captions</h3>
+        <span class="engine mono">${esc(engineLabel(cap))}</span>
+      </div>
+      <p class="cap-note">Automatic transcription can produce confident-sounding mistakes. Read through and fix any wrong words — click a word to edit it — then approve. Corrections re-check the ${"≤"}80&thinsp;ms timing before export unlocks.</p>
+      <div class="cues">${cues || '<div class="hint">No caption lines found.</div>'}</div>
+      <div id="capFails"></div>
+      <div class="gate-actions">
+        <button class="btn primary" id="capApprove">Approve captions &amp; unlock export</button>
+        <button class="btn ghost sm" id="capRetrans">Re-transcribe</button>
+      </div>
+    </div>`;
+        box.querySelectorAll(".cw[data-ti]").forEach((el) => {
+          el.addEventListener("input", () =>
+            el.classList.toggle("changed", el.textContent.trim() !== el.dataset.orig),
+          );
+        });
+        $("#capApprove").onclick = () => approveCaptionsUI(path);
+        $("#capRetrans").onclick = () => retranscribe(path);
+      }
+      function renderGateFailures(failures) {
+        const box = $("#capFails");
+        if (!box) return;
+        box.innerHTML = (failures || []).length
+          ? `<div class="fails"><div class="fails-h">Timing gate failed — fix these before export:</div>${failures
+              .map((f) => `<div class="fail-line mono">${esc(f)}</div>`)
+              .join("")}</div>`
+          : "";
+      }
+      async function approveCaptionsUI(path) {
+        const edits = [];
+        document.querySelectorAll("#wsGate .cw[data-ti]").forEach((el) => {
+          const t = el.textContent.trim();
+          if (t && t !== el.dataset.orig) edits.push({ ti: Number(el.dataset.ti), text: t });
+        });
+        const btn = $("#capApprove");
+        btn.disabled = true;
+        btn.textContent = "Checking timing…";
+        try {
+          const r = await api("/api/captions/approve", POST({ project: path, edits }));
+          if (r.approved) {
+            toast(
+              edits.length
+                ? "Corrections saved — export unlocked"
+                : "Captions approved — export unlocked",
+            );
+            await loadCaptions(path);
+            renderRail();
+            refreshCaptionGate(path);
+            reloadPreview(path);
+          } else {
+            renderGateFailures(r.gate && r.gate.failures);
+            toast("Timing gate failed — see the flagged lines", true);
+            btn.disabled = false;
+            btn.textContent = "Approve captions & unlock export";
+          }
+        } catch (e) {
+          toast(e.message, true);
+          btn.disabled = false;
+          btn.textContent = "Approve captions & unlock export";
+        }
+      }
+      async function retranscribe(path) {
+        if (
+          !confirm(
+            "Re-transcribe replaces this project's transcript (runs WhisperX locally; the first run may download ~1.5–2 GB). You'll then need to recompile the captions. Continue?",
+          )
+        )
+          return;
+        try {
+          const r = await api("/api/captions/retranscribe", POST({ project: path }));
+          toast("Re-transcribe started · " + r.id);
+          openDrawer();
+        } catch (e) {
+          toast(e.message, true);
+        }
       }
 
       // the running preview server IS the Studio editor (pv.url); it also serves
@@ -1638,6 +1897,8 @@
         await Promise.all([loadProjects(), loadStatus(), loadExamples()]);
         renderRail();
         renderCanvas();
+        // caption flags drive the rail "review" badges; fetch then re-badge
+        loadCaptionFlags().then(renderRail);
         setInterval(poll, 3000);
       }
       // poll refreshes only live state — never re-renders the canvas while the user
