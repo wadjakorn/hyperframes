@@ -1505,6 +1505,15 @@
         const gran = cap.granularity === "word" ? "word-level" : cap.granularity || "";
         return gran ? name + " · " + gran : name;
       }
+      // the WhisperX model the current transcript was made with, parsed from the
+      // engine tag (e.g. "whisper.cpp(small)" / "whisperx(medium+wav2vec2)") — used
+      // to preselect the re-transcribe dropdown. Defaults to "small".
+      function captionModel(cap) {
+        const m = (cap && cap.engine ? cap.engine : "").match(
+          /(tiny|base|small|medium|large(?:-v[23])?)/,
+        );
+        return m ? m[1] : "small";
+      }
       async function loadCaptions(path) {
         try {
           state.captions[path] = await api("/api/captions?project=" + encodeURIComponent(path));
@@ -1533,8 +1542,11 @@
         lockExport(stage === "review" || stage === "generate");
         const box = $("#wsGate");
         if (!box) return;
-        if (stage === "review") renderCaptionGate(box, path, cap);
-        else if (stage === "generate") renderGenerateCard(box, path);
+        // an active run (first generate OR a review-gate regenerate) always shows
+        // the progress card; when it finishes, finishGenRun re-renders → the gate.
+        const running = !!(state.genRuns[path] && state.genRuns[path].running);
+        if (running || stage === "generate") renderGenerateCard(box, path);
+        else if (stage === "review") renderCaptionGate(box, path, cap);
         else box.innerHTML = "";
       }
       // stage 1: a video-seeded project with no captions yet → agent kickoff.
@@ -1543,18 +1555,27 @@
       function renderGenerateCard(box, path) {
         const run = state.genRuns[path];
         const running = !!(run && run.running);
+        // a regenerate re-enters this card for a project that already has captions
+        const regen = !!(state.captions[path] && state.captions[path].isCaptionProject);
+        const preModel = (run && run.model) || (regen ? captionModel(state.captions[path]) : "small");
+        const opt = (v, label) =>
+          `<option value="${v}"${preModel === v ? " selected" : ""}>${label}</option>`;
         box.innerHTML = `
     <div class="gate">
-      <div class="cap-head"><h3>Generate captions</h3><span class="engine mono">Cinematic</span></div>
-      <p class="cap-note">This video has no captions yet. Transcribe it and build cinematic captions with the agent — it runs locally (WhisperX; the first run may download a model). It keeps running if you switch away. When it finishes you’ll review the words here before Export unlocks.</p>
+      <div class="cap-head"><h3>${regen ? "Re-transcribe &amp; rebuild" : "Generate captions"}</h3><span class="engine mono">Cinematic</span></div>
+      <p class="cap-note">${
+        regen
+          ? "Re-run transcription with a different model, then rebuild the cinematic captions. This replaces the current transcript and captions — you’ll review the new words here before Export unlocks."
+          : "This video has no captions yet. Transcribe it and build cinematic captions with the agent — it runs locally (WhisperX; the first run may download a model). It keeps running if you switch away. When it finishes you’ll review the words here before Export unlocks."
+      }</p>
       <div class="gen-row">
         <label class="hint">Transcription model
           <select id="genEngine" class="mono" ${running ? "disabled" : ""}>
-            <option value="small">small — fast (English)</option>
-            <option value="medium">medium — better for Thai / accented speech</option>
+            ${opt("small", "small — fast (English)")}
+            ${opt("medium", "medium — better for Thai / accented speech")}
           </select>
         </label>
-        <button class="btn primary" id="genRun" ${running ? "disabled" : ""}>${running ? "Working… keeps running if you switch away" : "Transcribe &amp; build captions"}</button>
+        <button class="btn primary" id="genRun" ${running ? "disabled" : ""}>${running ? "Working… keeps running if you switch away" : regen ? "Re-transcribe &amp; rebuild captions" : "Transcribe &amp; build captions"}</button>
       </div>
       <div class="gen-status${running ? " show" : ""}" id="genStatus"></div>
       <div class="log${run && run.lines.length ? " show" : ""}" id="genLog"></div>
@@ -1787,7 +1808,7 @@ Author and compile CINEMATIC captions for this project. This project directory i
       <div id="capFails"></div>
       <div class="gate-actions">
         <button class="btn primary" id="capApprove">Approve captions &amp; unlock export</button>
-        <button class="btn ghost sm" id="capRetrans">Re-transcribe</button>
+        <button class="btn ghost sm" id="capRetrans">Re-transcribe with a different model…</button>
       </div>
     </div>`;
         box.querySelectorAll(".cw[data-ti]").forEach((el) => {
@@ -1796,7 +1817,7 @@ Author and compile CINEMATIC captions for this project. This project directory i
           );
         });
         $("#capApprove").onclick = () => approveCaptionsUI(path);
-        $("#capRetrans").onclick = () => retranscribe(path);
+        $("#capRetrans").onclick = () => armRegenerate(path);
       }
       function renderGateFailures(failures) {
         const box = $("#capFails");
@@ -1840,20 +1861,17 @@ Author and compile CINEMATIC captions for this project. This project directory i
           btn.textContent = "Approve captions & unlock export";
         }
       }
-      async function retranscribe(path) {
-        if (
-          !confirm(
-            "Re-transcribe replaces this project's transcript (runs WhisperX locally; the first run may download ~1.5–2 GB). You'll then need to recompile the captions. Continue?",
-          )
-        )
-          return;
-        try {
-          const r = await api("/api/captions/retranscribe", POST({ project: path }));
-          toast("Re-transcribe started · " + r.id);
-          openDrawer();
-        } catch (e) {
-          toast(e.message, true);
-        }
+      // Re-transcribe from the review gate: swap the gate for the rebuild card
+      // (model picker preselected to the current model). Starting it runs the SAME
+      // two-phase flow as first generation — transcribe with the chosen model, then
+      // re-author + recompile — so it never leaves a new transcript over stale
+      // captions. finishGenRun returns to the review gate with the new words.
+      function armRegenerate(path) {
+        const box = $("#wsGate");
+        if (!box) return;
+        renderGenerateCard(box, path); // regen copy + preselected model; primary → generateCaptions
+        const sel = $("#genEngine");
+        if (sel) sel.focus();
       }
 
       // the running preview server IS the Studio editor (pv.url); it also serves
