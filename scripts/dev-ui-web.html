@@ -1105,6 +1105,7 @@
         projects: [], // [{name,path,source}]
         examples: [], // scaffoldable starter template names
         captions: {}, // project path → readCaptions() result (gate status)
+        genRuns: {}, // project path → {running, lines[]} buffered caption-gen agent log
         status: { instances: [], host: "" },
         recentOrder: [], // project paths, most-recent last (LRU)
         preview: {}, // project path → {state:'starting'|'live'|'failed', url}
@@ -1507,34 +1508,56 @@
         else if (stage === "generate") renderGenerateCard(box, path);
         else box.innerHTML = "";
       }
-      // stage 1: a video-seeded project with no captions yet → agent kickoff
+      // stage 1: a video-seeded project with no captions yet → agent kickoff.
+      // The run is buffered in state.genRuns[path] so its log survives switching
+      // projects (the agent keeps running server-side regardless).
       function renderGenerateCard(box, path) {
+        const run = state.genRuns[path];
+        const running = !!(run && run.running);
         box.innerHTML = `
     <div class="gate">
       <div class="cap-head"><h3>Generate captions</h3><span class="engine mono">Cinematic</span></div>
-      <p class="cap-note">This video has no captions yet. Transcribe it and build cinematic captions with the agent — it runs locally (WhisperX; the first run may download a model). When it finishes you’ll review the words here before Export unlocks.</p>
+      <p class="cap-note">This video has no captions yet. Transcribe it and build cinematic captions with the agent — it runs locally (WhisperX; the first run may download a model). It keeps running if you switch away. When it finishes you’ll review the words here before Export unlocks.</p>
       <div class="gen-row">
         <label class="hint">Transcription model
-          <select id="genEngine" class="mono">
+          <select id="genEngine" class="mono" ${running ? "disabled" : ""}>
             <option value="small">small — fast (English)</option>
             <option value="medium">medium — better for Thai / accented speech</option>
           </select>
         </label>
-        <button class="btn primary" id="genRun">Transcribe &amp; build captions</button>
+        <button class="btn primary" id="genRun" ${running ? "disabled" : ""}>${running ? "Working… keeps running if you switch away" : "Transcribe &amp; build captions"}</button>
       </div>
-      <div class="log" id="genLog"></div>
+      <div class="log${run && run.lines.length ? " show" : ""}" id="genLog"></div>
     </div>`;
-        $("#genRun").onclick = () => generateCaptions(path);
+        if (!running) $("#genRun").onclick = () => generateCaptions(path);
+        // replay any buffered agent output into the fresh log node
+        const out = $("#genLog");
+        if (run) for (const ln of run.lines) appendLine(out, ln.cls, ln.text);
       }
       async function generateCaptions(path) {
         const engine = $("#genEngine")?.value || "small";
-        const out = $("#genLog");
-        out.classList.add("show");
-        out.innerHTML = "";
-        const btn = $("#genRun");
-        btn.disabled = true;
-        btn.textContent = "Working… this can take a few minutes";
+        const run = { running: true, lines: [] };
+        state.genRuns[path] = run;
         state.agentBusy = true;
+        // buffer every line + mirror into the log IF this project is on screen;
+        // re-query #genLog each call so it follows re-renders (project switches).
+        const push = (cls, text) => {
+          run.lines.push({ cls, text });
+          while (run.lines.length > LOG_MAX) run.lines.shift();
+          if (state.selected === path) {
+            const out = $("#genLog");
+            if (out) appendLine(out, cls, text);
+          }
+        };
+        const btn = $("#genRun");
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "Working… keeps running if you switch away";
+        }
+        const genSel = $("#genEngine");
+        if (genSel) genSel.disabled = true;
+        const logEl = $("#genLog");
+        if (logEl) logEl.classList.add("show");
         const prompt = `Using the /embedded-captions skill, add captions to this project's talking-head video at source.mp4.
 - Use the CINEMATIC identity "cream" (pure embed → produces plan.json). Do NOT use Standard or Theme mode.
 - Transcribe locally with WhisperX model "${engine}" and auto-detect the spoken language.
@@ -1561,19 +1584,18 @@
               if (!m) continue;
               try {
                 const e = JSON.parse(m[1]);
-                appendLine(out, e.t === "assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text);
+                push(e.t === "assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text);
               } catch {}
             }
           }
         } catch (e) {
-          appendLine(out, "error", e.message);
+          push("error", e.message);
         } finally {
-          btn.disabled = false;
-          btn.textContent = "Transcribe & build captions";
+          run.running = false;
           state.agentBusy = false;
           await loadCaptions(path);
           renderRail();
-          refreshCaptionGate(path); // captions now exist → the review gate takes over
+          if (state.selected === path) refreshCaptionGate(path); // → review gate, or re-enable
           reloadPreview(path);
         }
       }
