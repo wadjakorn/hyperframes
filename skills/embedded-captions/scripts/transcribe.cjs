@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 /*
- * transcribe.cjs — word-level transcription via hyperframes' native Whisper
- * (replaces the Python ElevenLabs Scribe path; no Python, no API key).
+ * transcribe.cjs — word-level transcription for the caption pipeline.
  *
- *   node transcribe.cjs <project-dir> [model] [language]
+ *   node transcribe.cjs <project-dir> [model] [language] [flags]
+ *     --provider <local|openai|openrouter>  transcription backend (default local)
+ *     --prompt "<hot-words / draft text>"   biases spelling of proper nouns
+ *     --force                               re-transcribe even if a transcript exists
+ *
+ * Backends:
+ *   • local (default) — hyperframes' native WhisperX → whisper.cpp fallback. No key.
+ *   • openai / openrouter — an OpenAI-compatible /audio/transcriptions API. Reads
+ *     OPENAI_API_KEY / OPENROUTER_API_KEY from the env. Both use the SAME request
+ *     shape (multipart, verbose_json + word granularity); only the base URL + key
+ *     differ. Pick a WORD-timestamp model (whisper-1, groq/whisper-large-v3) — the
+ *     word-level caption gate needs per-word timings; gpt-4o-transcribe is text-only.
+ *
  * Reads:  <project>/source.mp4 (audio track)
- * Writes: <project>/transcript.json  — { text, language_code, words:[{text,start,end,type}] }
+ * Writes: <project>/transcript.json  — { text, language_code, engine, words:[{text,start,end,type}] }
  */
 const path = require("path");
 const fs = require("fs");
@@ -109,6 +120,72 @@ function ensureSubsTemplate(project) {
 function buildInitialPrompt(hotwords) {
   if (!Array.isArray(hotwords) || !hotwords.length) return "";
   return `Glossary: ${hotwords.join(", ")}.`;
+}
+
+// ── OpenAI-compatible API backend (OpenAI direct + OpenRouter) ────────────────
+// OpenRouter's /api/v1/audio/transcriptions is OpenAI-compatible, so ONE code path
+// serves both — only the base URL + key env differ. verbose_json + word
+// granularity gives the per-word timings the caption gate binds against.
+const API_BASES = {
+  openai: "https://api.openai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+};
+const API_KEY_ENV = { openai: "OPENAI_API_KEY", openrouter: "OPENROUTER_API_KEY" };
+const isApiProvider = (p) => p === "openai" || p === "openrouter";
+
+// Flatten an OpenAI-compatible verbose_json transcription into our flat word array.
+// Whisper models return words:[{word,start,end}]; keep only fully-timed tokens
+// (gpt-4o-transcribe returns none → caller errors with a clear message). Pure.
+function parseApiWords(json) {
+  const arr = json && Array.isArray(json.words) ? json.words : [];
+  return arr
+    .filter(
+      (w) => w && (w.word ?? w.text) != null && Number.isFinite(w.start) && Number.isFinite(w.end),
+    )
+    .map((w) => ({
+      text: String(w.word ?? w.text).trim(),
+      start: w.start,
+      end: w.end,
+      type: "word",
+    }))
+    .filter((w) => w.text);
+}
+
+// POST audio.mp3 to <base>/audio/transcriptions and return {words,text,language}.
+// Throws (never silently falls back) — the API was explicitly chosen, so a missing
+// key / HTTP error / word-timestamp-less model must surface, not degrade to local.
+async function apiTranscribe(audioPath, { provider, model, language, prompt }) {
+  const base = API_BASES[provider];
+  const keyEnv = API_KEY_ENV[provider];
+  const key = process.env[keyEnv];
+  if (!base) throw new Error(`unknown API provider "${provider}"`);
+  if (!key) throw new Error(`${provider} API key missing — set ${keyEnv} in the server env`);
+  const form = new FormData();
+  form.append("file", new Blob([fs.readFileSync(audioPath)], { type: "audio/mpeg" }), "audio.mp3");
+  form.append("model", model);
+  form.append("response_format", "verbose_json");
+  form.append("timestamp_granularities[]", "word");
+  if (language) form.append("language", language);
+  if (prompt) form.append("prompt", prompt);
+  const headers = { Authorization: `Bearer ${key}` };
+  if (provider === "openrouter") {
+    headers["HTTP-Referer"] = "https://hyperframes.heygen.com";
+    headers["X-Title"] = "Hyperframes captions";
+  }
+  const res = await fetch(`${base}/audio/transcriptions`, { method: "POST", headers, body: form });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${provider} HTTP ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const words = parseApiWords(json);
+  if (!words.length)
+    throw new Error(
+      `${provider}/${model} returned no word timestamps — the caption gate is word-level. ` +
+        `Pick a word-timestamp model (whisper-1, groq/whisper-large-v3), or use Manual captions. ` +
+        `(gpt-4o-transcribe is text-only.)`,
+    );
+  return { words, text: String(json.text || ""), language: String(json.language || "") };
 }
 
 function _compileSub(s) {
@@ -297,24 +374,41 @@ function audibleEnd(audio) {
   }
 }
 
-function main() {
-  // `--force` re-transcribes even when a valid transcript.json already exists —
-  // needed when the caller changes model/language and wants a fresh run (the
-  // "already normalized, skipping" shortcut below otherwise ignores both). Flags
-  // are filtered out so [model] / [language] stay positional in any order.
+async function main() {
+  // Parse `<dir> [model] [language]` positionals + flags. `--force` is boolean;
+  // `--provider` / `--prompt` take a value (either `--k v` or `--k=v`). Value-flags
+  // must consume their argument so it never leaks into the positional list.
   const argv = process.argv.slice(2);
-  const force = argv.includes("--force") || process.env.TRANSCRIBE_FORCE === "1";
-  const positional = argv.filter((a) => !a.startsWith("--"));
+  const flags = {};
+  const positional = [];
+  const VALUE_FLAGS = new Set(["provider", "prompt"]);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a.startsWith("--")) {
+      positional.push(a);
+      continue;
+    }
+    const eq = a.indexOf("=");
+    if (eq >= 0) flags[a.slice(2, eq)] = a.slice(eq + 1);
+    else if (VALUE_FLAGS.has(a.slice(2))) flags[a.slice(2)] = argv[++i] ?? "";
+    else flags[a.slice(2)] = true;
+  }
+  const force = !!flags.force || process.env.TRANSCRIBE_FORCE === "1";
+  const provider = String(flags.provider || process.env.WHISPER_PROVIDER || "local").toLowerCase();
+  const useApi = isApiProvider(provider);
+  const promptExtra = String(flags.prompt || "").trim();
   const project = path.resolve(positional[0] || "");
   if (!positional[0]) {
-    console.error("usage: transcribe.cjs <project-dir> [model] [language] [--force]");
+    console.error(
+      "usage: transcribe.cjs <project-dir> [model] [language] [--provider local|openai|openrouter] [--prompt <text>] [--force]",
+    );
     process.exit(1);
   }
   // Default = multilingual `small`, NOT `small.en`. Per media-use: ".en models
   // mistranslate non-English and mis-handle accented speech; default to small (auto-detects
   // language)." We hardcoded small.en before — it hallucinated a wrong transcript on an
   // accented speaker. Pass `small.en` only for known-clean-English; tough accents → a larger model.
-  const model = positional[1] || process.env.WHISPER_MODEL || "small";
+  const model = positional[1] || (useApi ? "whisper-1" : process.env.WHISPER_MODEL || "small");
   const language = positional[2] || process.env.WHISPER_LANG || "";
   const out = path.join(project, "transcript.json");
 
@@ -323,9 +417,17 @@ function main() {
   if (ensureSubsTemplate(project))
     console.error(`[transcribe] wrote ${SUBS_FILE} stub — add hotwords/substitutions to tune ASR`);
   const capCfg = loadCaptionsConfig(project);
-  const initialPrompt = buildInitialPrompt(capCfg.hotwords);
+  // The ASR bias prompt merges the persisted glossary (captions.subs.json) with any
+  // per-run hot-words / draft text passed via --prompt from the UI.
+  const initialPrompt = [buildInitialPrompt(capCfg.hotwords), promptExtra]
+    .filter(Boolean)
+    .join(" ");
   if (capCfg.hotwords.length)
     console.error(`[transcribe] glossary: ${capCfg.hotwords.length} hotword(s) → ASR bias prompt`);
+  if (promptExtra)
+    console.error(
+      `[transcribe] --prompt: ${promptExtra.length} chars of hot-words / draft text → ASR bias`,
+    );
 
   // already in our schema? skip — but validate the SHAPE, not just the keys:
   // `hyperframes init` drops a whisper.cpp segment/token-format transcript.json
@@ -377,8 +479,26 @@ function main() {
   // tighter than whisper.cpp's segment-interpolated ones; our gates are 80ms-strict) →
   // fallback hyperframes whisper.cpp. Force with TRANSCRIBE_ENGINE=whisper|whisperx.
   let words = null,
-    engine = null;
-  const wantWx = (process.env.TRANSCRIBE_ENGINE || "whisperx") === "whisperx";
+    engine = null,
+    detectedLang = "";
+
+  // ── API backend (OpenAI / OpenRouter) — explicitly chosen, so no silent fallback
+  if (useApi) {
+    console.error(
+      `[transcribe] provider=${provider} model=${model} — POST ${API_BASES[provider]}/audio/transcriptions`,
+    );
+    try {
+      const r = await apiTranscribe(audio, { provider, model, language, prompt: initialPrompt });
+      words = r.words;
+      detectedLang = r.language;
+      engine = `${provider}(${model})`;
+    } catch (e) {
+      console.error(`[transcribe] ${provider} API failed: ${String(e.message || e)}`);
+      process.exit(1);
+    }
+  }
+
+  const wantWx = !useApi && (process.env.TRANSCRIBE_ENGINE || "whisperx") === "whisperx";
   if (wantWx) {
     try {
       const wav = path.join(project, "_wx_audio.wav");
@@ -477,7 +597,7 @@ function main() {
     }
   }
 
-  if (!words) {
+  if (!words && !useApi) {
     // run hyperframes Whisper → writes a flat word array to <dir>/transcript.json
     const cli = path.join(hfRoot(), "packages", "cli", "dist", "cli.js");
     const args = ["transcribe", audio, "-d", project, "--json", "--model", model];
@@ -539,7 +659,7 @@ function main() {
     JSON.stringify(
       {
         text,
-        language_code: language || "en",
+        language_code: language || detectedLang || "en",
         engine,
         words,
         ...(trimmedTail ? { trimmed_tail_words: trimmedTail } : {}),
@@ -574,6 +694,9 @@ module.exports = {
   loadCaptionsConfig,
   ensureSubsTemplate,
   buildInitialPrompt,
+  parseApiWords,
+  isApiProvider,
+  API_BASES,
   applySubstitutions,
   parseWhisperxWords,
   interpolateMissingTimings,
@@ -586,4 +709,8 @@ module.exports = {
   SUBS_FILE,
 };
 
-if (require.main === module) main();
+if (require.main === module)
+  main().catch((e) => {
+    console.error("[transcribe]", String((e && e.message) || e));
+    process.exit(1);
+  });

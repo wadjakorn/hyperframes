@@ -15,7 +15,7 @@
 // provided the started servers are exposed (the "Expose to network" toggle).
 
 import { createServer } from "node:http";
-import { execFile, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -28,7 +28,12 @@ import {
   statSync,
   copyFileSync,
 } from "node:fs";
-import { readCaptions, approveCaptions, recompileComposition } from "./dev-ui-captions.mjs";
+import {
+  readCaptions,
+  approveCaptions,
+  recompileComposition,
+  writeManualTranscript,
+} from "./dev-ui-captions.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
@@ -395,15 +400,52 @@ async function postCaptionsApprove(req, res) {
   }
   send(res, 200, result);
 }
-const CAPTION_MODELS = new Set([
-  "tiny",
-  "base",
-  "small",
-  "medium",
-  "large",
-  "large-v2",
-  "large-v3",
+// Transcription backends offered in the caption flow. `local` = the on-box WhisperX
+// → whisper.cpp path (no key). `openai` / `openrouter` = an OpenAI-compatible
+// /audio/transcriptions API (transcribe.cjs --provider), gated on the key env being
+// present. Models that DON'T return word timestamps are marked so the UI can warn —
+// the caption gate is word-level (gpt-4o-transcribe is text-only).
+const NO_WORD_TIMESTAMP = new Set([
+  "gpt-4o-transcribe",
+  "gpt-4o-mini-transcribe",
+  "openai/gpt-4o-transcribe",
 ]);
+const CAPTION_PROVIDERS = {
+  local: {
+    label: "Local (WhisperX)",
+    keyEnv: null,
+    models: ["tiny", "base", "small", "medium", "large-v2", "large-v3"],
+    fallback: "small",
+  },
+  openai: {
+    label: "OpenAI API",
+    keyEnv: "OPENAI_API_KEY",
+    models: ["whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe"],
+    fallback: "whisper-1",
+  },
+  openrouter: {
+    label: "OpenRouter API",
+    keyEnv: "OPENROUTER_API_KEY",
+    models: ["openai/whisper-1", "groq/whisper-large-v3", "openai/gpt-4o-transcribe"],
+    fallback: "openai/whisper-1",
+  },
+};
+const validProvider = (p) => (CAPTION_PROVIDERS[String(p)] ? String(p) : "local");
+function validModel(provider, model) {
+  const P = CAPTION_PROVIDERS[provider];
+  return P.models.includes(String(model)) ? String(model) : P.fallback;
+}
+// Report providers + models + key availability to the UI (keys never leave the server).
+function getCaptionProviders(_req, res) {
+  const providers = Object.entries(CAPTION_PROVIDERS).map(([id, p]) => ({
+    id,
+    label: p.label,
+    keyEnv: p.keyEnv,
+    available: !p.keyEnv || !!process.env[p.keyEnv],
+    models: p.models.map((m) => ({ id: m, wordTimestamps: !NO_WORD_TIMESTAMP.has(m) })),
+  }));
+  send(res, 200, { providers });
+}
 // Compile the agent-authored cinematic.json → plan.json + index.html, as a
 // tracked job. The SERVER runs node here (child_process, no permission gate) —
 // the headless authoring agent cannot (`node` is denied under acceptEdits), so
@@ -431,24 +473,69 @@ async function postCaptionsRetranscribe(req, res) {
   const b = await readBody(req);
   const project = safeProjectPath(b.project);
   if (!project) return send(res, 400, { ok: false, error: "unknown project" });
-  const model = CAPTION_MODELS.has(String(b.model)) ? String(b.model) : "small";
+  const provider = validProvider(b.provider);
+  const model = validModel(provider, b.model);
+  // Gate API providers on the key being present server-side (never sent to the
+  // browser). Fail early with a clear message instead of spawning a doomed job.
+  const keyEnv = CAPTION_PROVIDERS[provider].keyEnv;
+  if (keyEnv && !process.env[keyEnv])
+    return send(res, 400, {
+      ok: false,
+      error: `${CAPTION_PROVIDERS[provider].label}: ${keyEnv} not set in the server environment`,
+    });
   // optional language: an ISO code (e.g. "th" for Thai) FORCES the transcription
   // language instead of auto-detect — important because the whisper.cpp fallback
   // defaults to English when nothing is passed. Validated to a bare code; args are
   // spawned without a shell, but keep it strict. Empty → auto-detect.
   const language = /^[a-z]{2,3}$/.test(String(b.language || "")) ? String(b.language) : "";
+  // hot-words / draft text biasing the ASR toward proper nouns. Capped; passed as a
+  // single execFile arg (no shell), so no escaping concern.
+  const prompt = typeof b.prompt === "string" ? b.prompt.slice(0, 2000).trim() : "";
   const args = [
     join(REPO_ROOT, "skills/embedded-captions/scripts/transcribe.cjs"),
     join(REPO_ROOT, project),
     model,
   ];
   if (language) args.push(language);
+  args.push("--provider", provider);
+  if (prompt) args.push("--prompt", prompt);
   // this endpoint is only hit by an explicit user "Transcribe / Re-transcribe" —
   // always force a fresh run so a changed model/language actually takes effect
   // (transcribe.cjs otherwise skips when a valid transcript.json already exists).
   args.push("--force");
   const job = startJob({ kind: "transcribe", project, cmd: "node", args });
   send(res, 200, { ok: true, id: job.id });
+}
+
+// Manual captions — skip ASR: write transcript.json straight from user-supplied
+// SRT / plain text, then the normal author→compile runs. No job (parsing is
+// instant + in-process); the client proceeds to authorThenCompile on ok.
+async function postCaptionsManual(req, res) {
+  const b = await readBody(req);
+  const project = safeProjectPath(b.project);
+  if (!project) return send(res, 400, { ok: false, error: "unknown project" });
+  const abs = join(REPO_ROOT, project);
+  const raw = typeof b.text === "string" ? b.text : "";
+  if (!raw.trim()) return send(res, 400, { ok: false, error: "no caption text provided" });
+  const language = /^[a-z]{2,3}$/.test(String(b.language || "")) ? String(b.language) : "";
+  // clip duration → better plain-text spacing (ignored for SRT, which carries its own).
+  let totalDur = 0;
+  try {
+    const src = join(abs, "source.mp4");
+    if (existsSync(src)) {
+      const o = execFileSync(
+        "ffprobe",
+        ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", src],
+        { encoding: "utf8" },
+      );
+      totalDur = parseFloat(String(o).trim()) || 0;
+    }
+  } catch {
+    /* ffprobe missing / unreadable — fall back to per-line spacing */
+  }
+  const r = writeManualTranscript(abs, raw, { language, totalDur });
+  if (!r.ok) return send(res, 400, { ok: false, error: r.error });
+  send(res, 200, { ok: true, words: r.words, mode: r.mode });
 }
 
 // ── caption-from-video: seed a new project with an existing clip ──────────────
@@ -538,6 +625,8 @@ const ROUTES = {
   "POST /api/captions/approve": postCaptionsApprove,
   "POST /api/captions/retranscribe": postCaptionsRetranscribe,
   "POST /api/captions/compile": postCaptionsCompile,
+  "POST /api/captions/manual": postCaptionsManual,
+  "GET /api/captions/providers": getCaptionProviders,
   "GET /api/source-videos": getSourceVideos,
   "POST /api/create-caption": postCreateCaption,
 };

@@ -75,6 +75,115 @@ export function readCaptions(dir) {
   };
 }
 
+// ── Manual captions: SRT / plain text → word-level transcript.json ───────────
+// Skips ASR entirely — the user supplies the words. The caption pipeline is
+// word-level, so cue text is split into words with timings distributed across the
+// cue (SRT) or across the clip duration (plain text). check-timing then binds the
+// compiled plan words to these — both derive from the same words, so the 80ms gate
+// is satisfied by construction. Pure parsers are exported for tests.
+
+// SRT / VTT timecode: HH:MM:SS,mmm (or .mmm) --> HH:MM:SS,mmm. Global-free so it
+// can be reused as a per-line test without lastIndex surprises.
+const TIMECODE_RE =
+  /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/;
+const tcSeconds = (h, m, s, ms) => +h * 3600 + +m * 60 + +s + +ms / 1000;
+
+export function parseSrtCues(raw) {
+  const cues = [];
+  const blocks = String(raw || "")
+    .replace(/^﻿/, "")
+    .replace(/\r/g, "")
+    .split(/\n\s*\n/);
+  for (const block of blocks) {
+    const m = block.match(TIMECODE_RE);
+    if (!m) continue;
+    const start = tcSeconds(m[1], m[2], m[3], m[4]);
+    const end = tcSeconds(m[5], m[6], m[7], m[8]);
+    const text = block
+      .split("\n")
+      .filter(
+        (l) =>
+          l.trim() && !TIMECODE_RE.test(l) && !/^\d+$/.test(l.trim()) && !/^WEBVTT/i.test(l.trim()),
+      )
+      .join(" ")
+      .trim();
+    if (text && end > start) cues.push({ start, end, text });
+  }
+  return cues;
+}
+
+// Plain text (no timecodes) → cues spread across the clip. One cue per line, or
+// per sentence when it's a single block. Cue length is weighted by word count so
+// long lines dwell longer. totalDur (clip seconds) anchors the spread; without it
+// we fall back to ~2.5s per line.
+export function plainTextToCues(raw, totalDur) {
+  let lines = String(raw || "")
+    .split(/\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (lines.length <= 1)
+    lines = String(raw || "")
+      .split(/(?<=[.!?。！？])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  if (!lines.length) return [];
+  const counts = lines.map((l) => Math.max(1, l.split(/\s+/).length));
+  const totalWords = counts.reduce((a, b) => a + b, 0);
+  const dur = totalDur && totalDur > 0 ? totalDur : lines.length * 2.5;
+  const cues = [];
+  let t = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const d = (dur * counts[i]) / totalWords;
+    cues.push({ start: t, end: t + d, text: lines[i] });
+    t += d;
+  }
+  return cues;
+}
+
+// Cues → flat words, timings distributed evenly inside each cue.
+export function cuesToWords(cues) {
+  const words = [];
+  for (const c of cues || []) {
+    const toks = String(c.text).split(/\s+/).filter(Boolean);
+    if (!toks.length) continue;
+    const step = Math.max(0.05, c.end - c.start) / toks.length;
+    toks.forEach((tk, i) =>
+      words.push({
+        text: tk,
+        start: +(c.start + i * step).toFixed(3),
+        end: +(c.start + (i + 1) * step).toFixed(3),
+        type: "word",
+      }),
+    );
+  }
+  return words;
+}
+
+// SRT first (precise timings); plain text otherwise (spread across totalDur).
+export function parseManualCaptions(raw, { totalDur } = {}) {
+  const srt = parseSrtCues(raw);
+  const isSrt = srt.length > 0;
+  const words = cuesToWords(isSrt ? srt : plainTextToCues(raw, totalDur));
+  const text = words
+    .map((w) => w.text)
+    .join(" ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .trim();
+  return { words, text, mode: isSrt ? "srt" : "text" };
+}
+
+// Write a manual transcript.json for `dir`. `totalDur` (clip seconds) improves
+// plain-text spacing; ignored for SRT. Returns {ok, words, mode} or {ok:false}.
+export function writeManualTranscript(dir, raw, { language, totalDur } = {}) {
+  const { words, text, mode } = parseManualCaptions(raw, { totalDur });
+  if (!words.length)
+    return { ok: false, error: "no caption text found — paste SRT or plain lines" };
+  const lang = /^[a-z]{2,3}$/.test(String(language || "")) ? String(language) : "en";
+  const tr = { text, language_code: lang, engine: `manual(${mode})`, words };
+  writeFileSync(transcriptPathOf(dir), JSON.stringify(tr, null, 2));
+  return { ok: true, words: words.length, mode };
+}
+
 // Apply text corrections (keyed by transcript index `ti`) to BOTH plan.json and
 // transcript.json — keeping timings — then run the 80ms gate. Writes the
 // approved marker only if the gate passes. Does NOT recompile index.html; that's

@@ -7,6 +7,9 @@ import {
   readCaptions,
   approveCaptions,
   approvedMarker,
+  parseSrtCues,
+  parseManualCaptions,
+  writeManualTranscript,
 } from "./dev-ui-captions.mjs";
 
 // A minimal Cinematic caption project: flat transcript.json (the real shape —
@@ -119,4 +122,55 @@ test("approve: a text edit syncs BOTH plan.json and transcript.json (keeps the g
   // timings preserved
   expect(plan.groups[0].words[1].start).toBe(1.2);
   expect(tr.words[1].start).toBe(1.2);
+});
+
+// ── Manual captions (SRT / plain text → transcript.json) ─────────────────────
+test("parseSrtCues: parses timecodes + text, skips index/blank lines", () => {
+  const srt =
+    "1\n00:00:00,000 --> 00:00:02,000\nHello there\n\n2\n00:00:02,000 --> 00:00:04,500\nThis is Herder";
+  const cues = parseSrtCues(srt);
+  expect(cues.length).toBe(2);
+  expect(cues[0]).toEqual({ start: 0, end: 2, text: "Hello there" });
+  expect(cues[1].start).toBe(2);
+  expect(cues[1].text).toBe("This is Herder");
+});
+
+test("parseManualCaptions: SRT mode distributes word timings within each cue", () => {
+  const srt = "1\n00:00:00,000 --> 00:00:03,000\nHello there friend";
+  const r = parseManualCaptions(srt, {});
+  expect(r.mode).toBe("srt");
+  expect(r.words.length).toBe(3);
+  expect(r.words[0].start).toBe(0);
+  expect(r.words[2].end).toBe(3); // last word ends at the cue end
+  expect(r.text).toBe("Hello there friend");
+});
+
+test("parseManualCaptions: plain text spreads across totalDur, monotonic timings", () => {
+  const r = parseManualCaptions("first line\nsecond line here", { totalDur: 10 });
+  expect(r.mode).toBe("text");
+  expect(r.words.length).toBe(5);
+  expect(r.words[0].start).toBe(0);
+  expect(r.words.at(-1).end).toBeCloseTo(10, 3); // spans the whole clip
+  // strictly increasing starts
+  for (let i = 1; i < r.words.length; i++)
+    expect(r.words[i].start >= r.words[i - 1].start).toBe(true);
+});
+
+test("writeManualTranscript: writes a word-level transcript.json the gate can read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "capman-"));
+  const r = writeManualTranscript(dir, "hello world\nsecond caption", {
+    language: "en",
+    totalDur: 4,
+  });
+  expect(r.ok).toBe(true);
+  expect(r.words).toBe(4);
+  const tr = JSON.parse(readFileSync(join(dir, "transcript.json"), "utf8"));
+  expect(tr.language_code).toBe("en");
+  expect(tr.engine).toBe("manual(text)");
+  expect(Array.isArray(tr.words) && tr.words.every((w) => "start" in w && "end" in w)).toBe(true);
+});
+
+test("writeManualTranscript: empty input → {ok:false}", () => {
+  const dir = mkdtempSync(join(tmpdir(), "capman-"));
+  expect(writeManualTranscript(dir, "   ", {}).ok).toBe(false);
 });

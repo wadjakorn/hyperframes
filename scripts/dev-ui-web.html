@@ -1135,6 +1135,7 @@
         examples: [], // scaffoldable starter template names
         captions: {}, // project path → readCaptions() result (gate status)
         genRuns: {}, // project path → {running, lines[]} buffered caption-gen agent log
+        captionProviders: null, // [{id,label,available,models[]}] from /api/captions/providers
         status: { instances: [], host: "" },
         recentOrder: [], // project paths, most-recent last (LRU)
         preview: {}, // project path → {state:'starting'|'live'|'failed', url}
@@ -1509,10 +1510,11 @@
       // engine tag (e.g. "whisper.cpp(small)" / "whisperx(medium+wav2vec2)") — used
       // to preselect the re-transcribe dropdown. Defaults to "small".
       function captionModel(cap) {
-        const m = (cap && cap.engine ? cap.engine : "").match(
-          /(tiny|base|small|medium|large(?:-v[23])?)/,
-        );
-        return m ? m[1] : "small";
+        // engine tags: "whisper.cpp(small)", "whisperx(medium+wav2vec2)",
+        // "openai(whisper-1)", "openrouter(groq/whisper-large-v3)". Take what's in the
+        // parens, dropping the "+wav2vec2" alignment suffix.
+        const m = (cap && cap.engine ? cap.engine : "").match(/\(([^)]+)\)/);
+        return m ? m[1].replace(/\+.*$/, "") : "small";
       }
       // Transcription language. "" = auto-detect (the default). Forcing a code
       // matters because the whisper.cpp fallback assumes English otherwise — pick
@@ -1533,6 +1535,58 @@
       ];
       // the transcript's current language code, for preselecting the regen dropdown
       const captionLanguage = (cap) => (cap && cap.language ? cap.language : "");
+      // Transcription providers. Fetched once from the server (which knows which API
+      // keys are present); this fallback is used until that resolves so the card can
+      // render immediately. `manual` is a UI-only pseudo-provider (skip ASR). API
+      // models without word timestamps carry wordTimestamps:false → shown with a warning.
+      const CAPTION_PROVIDERS_FALLBACK = [
+        {
+          id: "local",
+          label: "Local (WhisperX)",
+          available: true,
+          models: [
+            { id: "small", wordTimestamps: true },
+            { id: "medium", wordTimestamps: true },
+            { id: "large-v3", wordTimestamps: true },
+          ],
+        },
+        { id: "openai", label: "OpenAI API", available: false, keyEnv: "OPENAI_API_KEY", models: [] },
+        {
+          id: "openrouter",
+          label: "OpenRouter API",
+          available: false,
+          keyEnv: "OPENROUTER_API_KEY",
+          models: [],
+        },
+      ];
+      const MANUAL_PROVIDER = {
+        id: "manual",
+        label: "Manual — paste captions (skip transcription)",
+        available: true,
+        models: [],
+      };
+      // provider list for the UI = server providers (+ manual), or the fallback.
+      function captionProviders() {
+        return [...(state.captionProviders || CAPTION_PROVIDERS_FALLBACK), MANUAL_PROVIDER];
+      }
+      const findProvider = (id) => captionProviders().find((p) => p.id === id);
+      async function loadCaptionProviders() {
+        try {
+          const r = await api("/api/captions/providers");
+          if (r && Array.isArray(r.providers)) state.captionProviders = r.providers;
+        } catch {
+          /* keep the fallback */
+        }
+      }
+      // the provider the current transcript was made with, parsed from the engine tag
+      // (e.g. "openai(whisper-1)" / "openrouter(...)" / "manual(srt)" / "whisper.cpp(small)").
+      function captionProvider(cap) {
+        const e = (cap && cap.engine) || "";
+        if (/^openai\(/.test(e)) return "openai";
+        if (/^openrouter\(/.test(e)) return "openrouter";
+        if (/^manual\(/.test(e)) return "manual";
+        return "local";
+      }
       async function loadCaptions(path) {
         try {
           state.captions[path] = await api("/api/captions?project=" + encodeURIComponent(path));
@@ -1571,15 +1625,64 @@
       // stage 1: a video-seeded project with no captions yet → agent kickoff.
       // The run is buffered in state.genRuns[path] so its log survives switching
       // projects (the agent keeps running server-side regardless).
+      // friendly per-model label; API models without word timestamps are flagged
+      function modelOptionLabel(provider, m) {
+        if (provider === "local") {
+          const f = {
+            tiny: "tiny — fastest, roughest",
+            base: "base",
+            small: "small — fast (English)",
+            medium: "medium — better for Thai / accented speech",
+            "large-v2": "large-v2",
+            "large-v3": "large-v3 — most accurate, slowest",
+          };
+          return f[m.id] || m.id;
+        }
+        return m.wordTimestamps ? m.id : m.id + " — text only (no word timing)";
+      }
+      function renderProviderOptions(preProvider) {
+        return captionProviders()
+          .map((p) => {
+            const dis = !p.available;
+            const sel = p.id === preProvider && !dis;
+            return `<option value="${p.id}"${sel ? " selected" : ""}${dis ? " disabled" : ""}>${p.label}${dis ? " — no key" : ""}</option>`;
+          })
+          .join("");
+      }
+      function renderModelOptions(provider, preModel) {
+        const p = findProvider(provider);
+        const models = (p && p.models) || [];
+        if (!models.length) return `<option value="">—</option>`;
+        return models
+          .map(
+            (m) =>
+              `<option value="${m.id}"${preModel === m.id ? " selected" : ""}>${modelOptionLabel(provider, m)}</option>`,
+          )
+          .join("");
+      }
+      // context-sensitive helper line under the row
+      function genHintFor(provider) {
+        if (provider === "manual")
+          return "Paste an <strong>SRT</strong> file (with timecodes) for exact timing, or <strong>one caption per line</strong> — plain lines are spread evenly across the clip. Skips transcription entirely.";
+        if (provider === "openai" || provider === "openrouter")
+          return "API transcription. Pick a <strong>word-timestamp</strong> model (whisper-1, groq/whisper-large-v3) — the caption gate is word-level. Add hot-words below to fix proper nouns.";
+        return "Leave Language on “Auto-detect” for English; pick <strong>Thai</strong> (with model <strong>medium</strong> or larger) for Thai speech — auto-detect can otherwise fall back to English.";
+      }
+
       function renderGenerateCard(box, path) {
         const run = state.genRuns[path];
         const running = !!(run && run.running);
+        const dis = running ? "disabled" : "";
         // a regenerate re-enters this card for a project that already has captions
         const regen = !!(state.captions[path] && state.captions[path].isCaptionProject);
-        const preModel = (run && run.model) || (regen ? captionModel(state.captions[path]) : "small");
+        const preProvider0 =
+          (run && run.provider) || (regen ? captionProvider(state.captions[path]) : "local");
+        const preProvider = findProvider(preProvider0)?.available ? preProvider0 : "local";
+        const preModel = (run && run.model) || (regen ? captionModel(state.captions[path]) : "");
         const preLang = (run && run.language) || (regen ? captionLanguage(state.captions[path]) : "");
-        const opt = (v, label) =>
-          `<option value="${v}"${preModel === v ? " selected" : ""}>${label}</option>`;
+        const prePrompt = (run && run.prompt) || "";
+        const preManual = (run && run.manualText) || "";
+        const isManual = preProvider === "manual";
         const langOpts = CAPTION_LANGS.map(
           ([v, label]) => `<option value="${v}"${preLang === v ? " selected" : ""}>${label}</option>`,
         ).join("");
@@ -1588,27 +1691,54 @@
       <div class="cap-head"><h3>${regen ? "Re-transcribe &amp; rebuild" : "Generate captions"}</h3><span class="engine mono">Cinematic</span></div>
       <p class="cap-note">${
         regen
-          ? "Re-run transcription with a different model, then rebuild the cinematic captions. This replaces the current transcript and captions — you’ll review the new words here before Export unlocks."
-          : "This video has no captions yet. Transcribe it and build cinematic captions with the agent — it runs locally (WhisperX; the first run may download a model). It keeps running if you switch away. When it finishes you’ll review the words here before Export unlocks."
+          ? "Re-run transcription (or paste your own captions), then rebuild the cinematic captions. This replaces the current transcript and captions — you’ll review the new words here before Export unlocks."
+          : "This video has no captions yet. Transcribe it — locally, via an API, or paste your own — then build cinematic captions with the agent. It keeps running if you switch away. When it finishes you’ll review the words here before Export unlocks."
       }</p>
       <div class="gen-row">
-        <label class="hint">Transcription model
-          <select id="genEngine" class="mono" ${running ? "disabled" : ""}>
-            ${opt("small", "small — fast (English)")}
-            ${opt("medium", "medium — better for Thai / accented speech")}
-          </select>
+        <label class="hint">Provider
+          <select id="genProvider" class="mono" ${dis}>${renderProviderOptions(preProvider)}</select>
         </label>
-        <label class="hint">Language
-          <select id="genLang" class="mono" ${running ? "disabled" : ""}>
-            ${langOpts}
-          </select>
+        <label class="hint" id="genModelWrap"${isManual ? ' style="display:none"' : ""}>Model
+          <select id="genEngine" class="mono" ${dis}>${renderModelOptions(preProvider, preModel)}</select>
         </label>
-        <button class="btn primary" id="genRun" ${running ? "disabled" : ""}>${running ? "Working… keeps running if you switch away" : regen ? "Re-transcribe &amp; rebuild captions" : "Transcribe &amp; build captions"}</button>
+        <label class="hint" id="genLangWrap"${isManual ? "" : ""}>Language
+          <select id="genLang" class="mono" ${dis}>${langOpts}</select>
+        </label>
+        <button class="btn primary" id="genRun" ${dis}>${running ? "Working… keeps running if you switch away" : isManual ? "Build captions from my text" : regen ? "Re-transcribe &amp; rebuild captions" : "Transcribe &amp; build captions"}</button>
       </div>
-      <p class="hint" style="margin-top:6px">Leave Language on “Auto-detect” for English; pick <strong>Thai</strong> (with model <strong>medium</strong>) for Thai speech — auto-detect can otherwise fall back to English.</p>
+      <label class="hint" id="genPromptWrap" style="display:${isManual ? "none" : "block"};margin-top:8px">Hot-words / proper nouns <span style="opacity:.6">(optional — bias spelling, e.g. “Herder, Tmux, tmux multiplexer”)</span>
+        <textarea id="genPrompt" class="mono" rows="2" style="width:100%;resize:vertical" ${dis} placeholder="Comma- or space-separated proper nouns and jargon…">${prePrompt.replace(/</g, "&lt;")}</textarea>
+      </label>
+      <div id="genManualWrap" style="display:${isManual ? "block" : "none"};margin-top:8px">
+        <label class="hint">Your captions <span style="opacity:.6">(SRT with timecodes, or one caption per line)</span>
+          <textarea id="genManual" class="mono" rows="7" style="width:100%;resize:vertical" ${dis} placeholder="Paste SRT here, or plain lines like:&#10;For those who use tmux&#10;this one is special&#10;This is Herder.">${preManual.replace(/</g, "&lt;")}</textarea>
+        </label>
+      </div>
+      <p class="hint" id="genHint" style="margin-top:6px">${genHintFor(preProvider)}</p>
       <div class="gen-status${running ? " show" : ""}" id="genStatus"></div>
       <div class="log${run && run.lines.length ? " show" : ""}" id="genLog"></div>
     </div>`;
+        // wire provider → model repopulation + manual/prompt toggling
+        const provSel = $("#genProvider");
+        const applyProvider = () => {
+          const prov = provSel.value;
+          const manual = prov === "manual";
+          const modelSel = $("#genEngine");
+          if (modelSel) modelSel.innerHTML = renderModelOptions(prov, "");
+          $("#genModelWrap").style.display = manual ? "none" : "";
+          $("#genLangWrap").style.display = manual ? "none" : "";
+          $("#genPromptWrap").style.display = manual ? "none" : "block";
+          $("#genManualWrap").style.display = manual ? "block" : "none";
+          $("#genHint").innerHTML = genHintFor(prov);
+          const btn = $("#genRun");
+          if (btn && !running)
+            btn.textContent = manual
+              ? "Build captions from my text"
+              : regen
+                ? "Re-transcribe & rebuild captions"
+                : "Transcribe & build captions";
+        };
+        if (provSel && !running) provSel.onchange = applyProvider;
         if (!running) $("#genRun").onclick = () => generateCaptions(path);
         // replay any buffered agent output into the fresh log node
         const out = $("#genLog");
@@ -1633,10 +1763,15 @@
             ? "Authoring cinematic captions"
             : run.phase === "compile"
               ? "Compiling captions on the server"
-              : run.model
-                ? `Transcribing “${run.model}” on the server`
-                : "Transcribing on the server";
-        el.innerHTML = `<span class="pulse"></span> ${what} · <span class="mono">${clock}</span> elapsed${run.phase === "transcribe" ? " — WhisperX runs on CPU and prints nothing until done, so this looks quiet (longer on the first run while the model downloads)" : ""}`;
+              : run.phase === "manual"
+                ? "Importing your captions"
+                : run.model
+                  ? `Transcribing “${run.model}” on the server`
+                  : "Transcribing on the server";
+        // the "quiet on CPU" note only applies to the local WhisperX path
+        const localTranscribing =
+          run.phase === "transcribe" && (!run.provider || run.provider === "local");
+        el.innerHTML = `<span class="pulse"></span> ${what} · <span class="mono">${clock}</span> elapsed${localTranscribing ? " — WhisperX runs on CPU and prints nothing until done, so this looks quiet (longer on the first run while the model downloads)" : ""}`;
         el.classList.add("show");
       }
       // poll a server job until it stops running; emit each new lastLine.
@@ -1717,14 +1852,25 @@ Author CINEMATIC captions for this project. This project directory is your curre
       //   1. transcribe.cjs server-side (the WhisperX/docker step) → transcript.json
       //   2. agent (with repo access) authors cinematic.json + compiles → plan/index
       async function generateCaptions(path) {
+        const provider = $("#genProvider")?.value || "local";
+        const manual = provider === "manual";
         const model = $("#genEngine")?.value || "small";
         const language = $("#genLang")?.value || "";
+        const prompt = $("#genPrompt")?.value || "";
+        const manualText = $("#genManual")?.value || "";
+        if (manual && !manualText.trim()) {
+          toast("Paste your captions (SRT or plain lines) first", true);
+          return;
+        }
         const run = {
           running: true,
           lines: [],
-          model,
+          provider,
+          model: manual ? "" : model,
           language,
-          phase: "transcribe",
+          prompt,
+          manualText,
+          phase: manual ? "manual" : "transcribe",
           startedAt: Date.now(),
         };
         state.genRuns[path] = run;
@@ -1735,27 +1881,39 @@ Author CINEMATIC captions for this project. This project directory is your curre
           btn.disabled = true;
           btn.textContent = "Working… keeps running if you switch away";
         }
-        for (const id of ["#genEngine", "#genLang"]) {
+        for (const id of ["#genProvider", "#genEngine", "#genLang", "#genPrompt", "#genManual"]) {
           const el = $(id);
           if (el) el.disabled = true;
         }
         const logEl = $("#genLog");
         if (logEl) logEl.classList.add("show");
         try {
-          // ── phase 1: transcription (server job — no agent sandbox / docker) ──
-          const langName = (CAPTION_LANGS.find(([c]) => c === language) || [, "auto-detected"])[1];
-          push(
-            "system",
-            `Transcribing with WhisperX “${model}” (${language ? langName : "auto-detect language"}) on the server (CPU — quiet until it finishes)…`,
-          );
-          updateGenStatus();
-          const t = await api(
-            "/api/captions/retranscribe",
-            POST({ project: path, model, language }),
-          );
-          const ok = await pollJobDone(t.id, (line) => push("tool", line));
-          if (!ok) throw new Error("Transcription failed — check Jobs under Setup & advanced.");
-          push("result", "Transcript ready. Authoring cinematic captions…");
+          if (manual) {
+            // ── manual: server writes transcript.json from the pasted text (no ASR) ──
+            push("system", "Importing your captions (skipping transcription)…");
+            updateGenStatus();
+            const m = await api("/api/captions/manual", POST({ project: path, text: manualText, language }));
+            push(
+              "result",
+              `Imported ${m.words} word(s) from ${m.mode === "srt" ? "SRT timings" : "plain text (spread across the clip)"}. Authoring cinematic captions…`,
+            );
+          } else {
+            // ── phase 1: transcription (server job — no agent sandbox / docker) ──
+            const langName = (CAPTION_LANGS.find(([c]) => c === language) || [, "auto-detected"])[1];
+            const provLabel = findProvider(provider)?.label || provider;
+            push(
+              "system",
+              `Transcribing with ${provLabel} “${model}” (${language ? langName : "auto-detect language"})${prompt.trim() ? " + hot-words" : ""}…`,
+            );
+            updateGenStatus();
+            const t = await api(
+              "/api/captions/retranscribe",
+              POST({ project: path, provider, model, language, prompt }),
+            );
+            const ok = await pollJobDone(t.id, (line) => push("tool", line));
+            if (!ok) throw new Error("Transcription failed — check Jobs under Setup & advanced.");
+            push("result", "Transcript ready. Authoring cinematic captions…");
+          }
           run.phase = "author";
           updateGenStatus();
           // ── phase 2: agent authors cinematic.json, then SERVER compiles ──
@@ -2365,6 +2523,10 @@ Author CINEMATIC captions for this project. This project directory is your curre
         renderCanvas();
         // caption flags drive the rail "review" badges; fetch then re-badge
         loadCaptionFlags().then(renderRail);
+        // transcription providers + which API keys are live; re-render the gate once known
+        loadCaptionProviders().then(() => {
+          if (state.selected) refreshCaptionGate(state.selected);
+        });
         reconnectCaptionJobs(); // resume any caption generation still running server-side
         setInterval(poll, 3000);
         setInterval(updateGenStatus, 1000); // live elapsed heartbeat during caption-gen

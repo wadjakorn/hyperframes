@@ -281,3 +281,33 @@ test("buildWhisperxCommand: docker forwards only set HF_* env, omits --user with
   assert.ok(args.join(" ").includes("-e HF_HUB_OFFLINE=1"));
   assert.ok(!args.join(" ").includes("IGNORED"));
 });
+
+// ── API backend (OpenAI / OpenRouter) ────────────────────────────────────────
+test("parseApiWords: verbose_json words → flat {text,start,end,type}", () => {
+  const words = t.parseApiWords({
+    text: "hi there",
+    language: "en",
+    words: [
+      { word: "hi", start: 0, end: 0.3 },
+      { word: "there", start: 0.3, end: 0.7 },
+    ],
+  });
+  assert.deepEqual(words, [
+    { text: "hi", start: 0, end: 0.3, type: "word" },
+    { text: "there", start: 0.3, end: 0.7, type: "word" },
+  ]);
+});
+
+test("parseApiWords: drops words missing timings (gpt-4o-transcribe returns none)", () => {
+  assert.deepEqual(t.parseApiWords({ text: "hi", words: [] }), []);
+  // a token with null start is not word-timestamped → dropped
+  assert.deepEqual(t.parseApiWords({ words: [{ word: "x", start: null, end: 1 }] }), []);
+});
+
+test("isApiProvider / API_BASES: openai + openrouter are API providers, local is not", () => {
+  assert.equal(t.isApiProvider("openai"), true);
+  assert.equal(t.isApiProvider("openrouter"), true);
+  assert.equal(t.isApiProvider("local"), false);
+  assert.equal(t.API_BASES.openai, "https://api.openai.com/v1");
+  assert.equal(t.API_BASES.openrouter, "https://openrouter.ai/api/v1");
+});
