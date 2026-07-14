@@ -344,20 +344,24 @@ async function postAgent(req, res) {
     Connection: "keep-alive",
   });
   const sse = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  // caption authoring needs to read the skill + run the compile scripts, which
+  // live outside the (sandboxed) project dir — grant the repo root for those runs.
+  const agentArgs = [
+    "-p",
+    prompt,
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--permission-mode",
+    AGENT_PERM,
+  ];
+  if (b.repoAccess) agentArgs.push("--add-dir", REPO_ROOT);
   const job = startJob({
     kind: "agent",
     project,
     cwd: join(REPO_ROOT, project),
     cmd: "claude",
-    args: [
-      "-p",
-      prompt,
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--permission-mode",
-      AGENT_PERM,
-    ],
+    args: agentArgs,
     onLine: (line) => {
       const e = agentEvent(line);
       if (e && e.text) sse(e);
@@ -391,10 +395,20 @@ async function postCaptionsApprove(req, res) {
   }
   send(res, 200, result);
 }
+const CAPTION_MODELS = new Set([
+  "tiny",
+  "base",
+  "small",
+  "medium",
+  "large",
+  "large-v2",
+  "large-v3",
+]);
 async function postCaptionsRetranscribe(req, res) {
   const b = await readBody(req);
   const project = safeProjectPath(b.project);
   if (!project) return send(res, 400, { ok: false, error: "unknown project" });
+  const model = CAPTION_MODELS.has(String(b.model)) ? String(b.model) : "small";
   const job = startJob({
     kind: "transcribe",
     project,
@@ -402,6 +416,7 @@ async function postCaptionsRetranscribe(req, res) {
     args: [
       join(REPO_ROOT, "skills/embedded-captions/scripts/transcribe.cjs"),
       join(REPO_ROOT, project),
+      model,
     ],
   });
   send(res, 200, { ok: true, id: job.id });

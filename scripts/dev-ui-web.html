@@ -1534,8 +1534,58 @@
         const out = $("#genLog");
         if (run) for (const ln of run.lines) appendLine(out, ln.cls, ln.text);
       }
+      // poll a server job until it stops running; emit each new lastLine.
+      async function pollJobDone(id, onLine) {
+        let last = "";
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 1500));
+          let jobs = [];
+          try {
+            jobs = (await api("/api/jobs")).jobs || [];
+          } catch {
+            continue;
+          }
+          const j = jobs.find((x) => x.id === id);
+          if (!j) continue; // not registered yet
+          if (j.lastLine && j.lastLine !== last) {
+            last = j.lastLine;
+            onLine(last);
+          }
+          if (j.state !== "running") return j.state === "done";
+        }
+      }
+      // stream an /api/agent SSE run, pushing each event through `push`.
+      async function streamAgent(path, prompt, push, opts = {}) {
+        const r = await fetch("/api/agent", POST({ project: path, prompt, ...opts }));
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error || "HTTP " + r.status);
+        }
+        const reader = r.body.getReader(),
+          dec = new TextDecoder();
+        let buf = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            const chunk = buf.slice(0, i);
+            buf = buf.slice(i + 2);
+            const m = chunk.match(/^data: (.*)$/s);
+            if (!m) continue;
+            try {
+              const e = JSON.parse(m[1]);
+              push(e.t === "assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text);
+            } catch {}
+          }
+        }
+      }
+      // Two-phase Cinematic caption generation (design "B"):
+      //   1. transcribe.cjs server-side (the WhisperX/docker step) → transcript.json
+      //   2. agent (with repo access) authors cinematic.json + compiles → plan/index
       async function generateCaptions(path) {
-        const engine = $("#genEngine")?.value || "small";
+        const model = $("#genEngine")?.value || "small";
         const run = { running: true, lines: [] };
         state.genRuns[path] = run;
         state.agentBusy = true;
@@ -1558,36 +1608,21 @@
         if (genSel) genSel.disabled = true;
         const logEl = $("#genLog");
         if (logEl) logEl.classList.add("show");
-        const prompt = `Using the /embedded-captions skill, add captions to this project's talking-head video at source.mp4.
-- Use the CINEMATIC identity "cream" (pure embed → produces plan.json). Do NOT use Standard or Theme mode.
-- Transcribe locally with WhisperX model "${engine}" and auto-detect the spoken language.
-- Produce transcript.json, then author cinematic.json and compile via make-cinematic.cjs and make-composition.cjs so that plan.json and index.html exist.
-- STOP after the captions compile — do NOT render the final MP4. I will review the caption timing in the console and export from there.`;
         try {
-          const r = await fetch("/api/agent", POST({ project: path, prompt }));
-          if (!r.ok) {
-            const j = await r.json().catch(() => ({}));
-            throw new Error(j.error || "HTTP " + r.status);
-          }
-          const reader = r.body.getReader(),
-            dec = new TextDecoder();
-          let buf = "";
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buf += dec.decode(value, { stream: true });
-            let i;
-            while ((i = buf.indexOf("\n\n")) >= 0) {
-              const chunk = buf.slice(0, i);
-              buf = buf.slice(i + 2);
-              const m = chunk.match(/^data: (.*)$/s);
-              if (!m) continue;
-              try {
-                const e = JSON.parse(m[1]);
-                push(e.t === "assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text);
-              } catch {}
-            }
-          }
+          // ── phase 1: transcription (server job — no agent sandbox / docker) ──
+          push("system", `Transcribing with WhisperX “${model}” on the server…`);
+          const t = await api("/api/captions/retranscribe", POST({ project: path, model }));
+          const ok = await pollJobDone(t.id, (line) => push("tool", line));
+          if (!ok) throw new Error("Transcription failed — check Jobs under Setup & advanced.");
+          push("result", "Transcript ready. Authoring cinematic captions…");
+          // ── phase 2: author + compile (agent, repo access) ──
+          const prompt = `A transcript already exists at transcript.json in this project — do NOT transcribe again.
+Author and compile CINEMATIC captions for this project. This project directory is your current working directory; the repository root (containing the skills/ folder) is also available.
+- Read the workflow and schema in skills/embedded-captions/SKILL.md and the header of skills/embedded-captions/scripts/make-cinematic.cjs.
+- Author cinematic.json using the Cinematic "cream" DNA: group transcript.json's words into thought-blocks (2–5 words per line at clause boundaries), words verbatim in spoken order, at most one "hero": true line at the climax.
+- Compile with absolute paths: node <repo>/skills/embedded-captions/scripts/make-cinematic.cjs <this-project-dir>, then node <repo>/skills/embedded-captions/scripts/make-composition.cjs <this-project-dir>. Fix errors and re-run until both succeed and plan.json + index.html exist.
+- Do NOT render the final MP4. Stop once plan.json and index.html exist.`;
+          await streamAgent(path, prompt, push, { repoAccess: true });
         } catch (e) {
           push("error", e.message);
         } finally {
