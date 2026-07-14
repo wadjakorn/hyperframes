@@ -1154,16 +1154,19 @@
         btn.disabled = true;
         btn.textContent = "Creating…";
         try {
+          // scaffold only — opening the workspace (ensurePreview) is the single
+          // owner of starting the preview server, so we never double-start it.
           await api(
             "/api/create",
             POST({
               name,
               example: $("#cfStart").value,
               resolution: $("#cfRes").value,
-              start: true,
+              start: false,
             }),
           );
           await loadProjects();
+          await loadStatus();
           selectVideo("projects/" + name);
           toast("Created " + name);
         } catch (e) {
@@ -1251,9 +1254,17 @@
         ensurePreview(path);
       }
 
+      // paths with an in-flight ensurePreview — guards against two concurrent
+      // calls (e.g. select + poll) both hitting /api/start for the same project.
+      const startingPaths = new Set();
       // start the project's server if needed, poll until up, then show the iframe
       async function ensurePreview(path) {
+        if (startingPaths.has(path)) return;
+        startingPaths.add(path);
         try {
+          // refresh first so we never double-start a server another path (or the
+          // create flow) already launched but that isn't yet in our cached status.
+          await loadStatus();
           const up = instanceFor(path);
           if (up && up.up) {
             state.preview[path] = { state: "live", url: up.url };
@@ -1281,6 +1292,8 @@
           state.preview[path] = { state: "failed" };
           renderPreviewState(path);
           toast("Preview failed: " + e.message, true);
+        } finally {
+          startingPaths.delete(path);
         }
       }
 
