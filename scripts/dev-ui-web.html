@@ -963,6 +963,7 @@
       const state = {
         selected: null, // repo-relative project path, or null → front door
         projects: [], // [{name,path,source}]
+        examples: [], // scaffoldable starter template names
         status: { instances: [], host: "" },
         recentOrder: [], // project paths, most-recent last (LRU)
         preview: {}, // project path → {state:'starting'|'live'|'failed', url}
@@ -1005,6 +1006,15 @@
           state.projects = (await api("/api/projects")).projects || [];
         } catch (e) {
           toast(e.message, true);
+        }
+      }
+      // the scaffoldable starter templates (registry example-typed items) — NOT
+      // the registry/examples dirs, which include local-only demos init can't build.
+      async function loadExamples() {
+        try {
+          state.examples = (await api("/api/examples")).examples || [];
+        } catch {
+          state.examples = [];
         }
       }
       async function loadStatus() {
@@ -1109,8 +1119,8 @@
       // ── create flow ──────────────────────────────────────────────────
       function openCreateFlow() {
         const c = $("#canvas");
-        const examples = state.projects.filter((p) => p.source === "example").map((p) => p.name);
-        const startOpts = ["blank", ...examples]
+        // only offer templates init can actually scaffold (registry examples)
+        const startOpts = ["blank", ...(state.examples || [])]
           .map((e) => `<option value="${esc(e)}">${esc(e)}</option>`)
           .join("");
         c.innerHTML = `
@@ -1272,7 +1282,9 @@
             reapLRU();
             return;
           }
-          await api("/api/start", POST({ project: path, expose: false }));
+          // previews follow the drawer's "Expose to network" toggle so a
+          // remote user (console on 0.0.0.0) can actually load the iframe.
+          await api("/api/start", POST({ project: path, expose: state.exposeAdvanced }));
           const deadline = Date.now() + 20000;
           while (Date.now() < deadline) {
             await new Promise((r) => setTimeout(r, 900));
@@ -1599,7 +1611,7 @@
       //  BOOT + SCOPED POLLING
       // ═══════════════════════════════════════════════════════════════════
       async function boot() {
-        await Promise.all([loadProjects(), loadStatus()]);
+        await Promise.all([loadProjects(), loadStatus(), loadExamples()]);
         renderRail();
         renderCanvas();
         setInterval(poll, 3000);

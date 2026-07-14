@@ -224,6 +224,23 @@ async function getProjects(_req, res) {
   const { stdout } = await runScript(["projects", "--json"]);
   send(res, 200, { projects: parseJson(stdout.trim()) ?? [] });
 }
+// scaffoldable starter templates — the example-typed items in the registry
+// index. This is the set `hyperframes init --example` can actually build; the
+// registry/examples/ dirs on disk are a superset (some are local-only demos
+// that init can't scaffold), so the create dropdown must use THIS list.
+function getExamples(_req, res) {
+  try {
+    const reg = JSON.parse(readFileSync(join(REPO_ROOT, "registry/registry.json"), "utf8"));
+    const items = Array.isArray(reg.items) ? reg.items : [];
+    const examples = items
+      .filter((i) => String(i.type || "").includes("example"))
+      .map((i) => i.name)
+      .filter(Boolean);
+    send(res, 200, { examples });
+  } catch {
+    send(res, 200, { examples: [] });
+  }
+}
 async function postStart(req, res) {
   const b = await readBody(req);
   const project = safeProjectPath(b.project);
@@ -333,6 +350,7 @@ const ROUTES = {
   "GET /index.html": html,
   "GET /api/status": getStatus,
   "GET /api/projects": getProjects,
+  "GET /api/examples": getExamples,
   "GET /api/jobs": getJobs,
   "POST /api/start": postStart,
   "POST /api/studio": postStudio,

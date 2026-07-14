@@ -298,12 +298,19 @@ cmd_create() {
   case "$name" in *[!a-zA-Z0-9_-]*) echo "✗ invalid name (use letters, digits, - _)"; exit 1 ;; esac
   mkdir -p "$REPO_ROOT/projects"
   [ -e "$REPO_ROOT/projects/$name" ] && { echo "✗ projects/$name already exists"; exit 1; }
-  if ( cd "$REPO_ROOT/projects" && HYPERFRAMES_SKIP_SKILLS=1 \
+  local out
+  if out=$( cd "$REPO_ROOT/projects" && HYPERFRAMES_SKIP_SKILLS=1 \
         node "$CLI" init "$name" --example "$example" --resolution "$resolution" \
-          --non-interactive --skip-transcribe ) >/dev/null 2>&1; then
+          --non-interactive --skip-transcribe 2>&1 ); then
     echo "created projects/$name"
   else
-    echo "✗ init failed for '$name'"; exit 1
+    # never leave a half-scaffolded ghost dir (it would block a clean retry and
+    # hide from the sidebar); surface the real reason instead of swallowing it.
+    rm -rf "$REPO_ROOT/projects/$name"
+    local why
+    why=$(printf '%s\n' "$out" | grep -iE "Failed to scaffold|not found|missing index|^Error" | head -1 | sed 's/ Available:.*//')
+    echo "✗ init failed for '$name': ${why:-check that the template exists}"
+    exit 1
   fi
 }
 
