@@ -66,6 +66,47 @@ function die(m) {
   process.exit(1);
 }
 
+// Probe the project's source video (source.mp4, else the first mp4/mov/webm) for
+// its real pixel geometry + fps. Returns {width,height,fps} or null when there's
+// no video / ffprobe is unavailable. Used to default a plan's canvas so captions
+// match the footage (portrait vs landscape) without the author guessing.
+function probeSourceDims(project) {
+  try {
+    const cp = require("child_process");
+    const vids = ["source.mp4"].concat(
+      fs.readdirSync(project).filter((x) => /\.(mp4|mov|webm)$/i.test(x)),
+    );
+    for (const f of vids) {
+      const fp = path.join(project, f);
+      if (!fs.existsSync(fp)) continue;
+      const out = cp.execFileSync(
+        "ffprobe",
+        [
+          "-v",
+          "error",
+          "-select_streams",
+          "v:0",
+          "-show_entries",
+          "stream=width,height,r_frame_rate",
+          "-of",
+          "json",
+          fp,
+        ],
+        { encoding: "utf8" },
+      );
+      const s = (JSON.parse(out).streams || [])[0];
+      if (!s || !s.width || !s.height) continue;
+      let fps = 0;
+      if (typeof s.r_frame_rate === "string" && s.r_frame_rate.includes("/")) {
+        const [n, d] = s.r_frame_rate.split("/").map(Number);
+        if (d) fps = Math.round(n / d);
+      }
+      return { width: s.width, height: s.height, fps: fps || 0 };
+    }
+  } catch {}
+  return null;
+}
+
 function main() {
   const project = path.resolve(process.argv[2] || "");
   if (!process.argv[2]) die("usage: make-cinematic.cjs <project-dir>");
@@ -96,9 +137,21 @@ function main() {
   const heroFeasible = authorFg ? false : hb ? hb.feasible : !narrFg;
   const globalFg = narrFg; // narration layer (name kept for the lowering below)
 
-  const W = C.width || 1920,
-    H = C.height || 1080,
-    FPS = C.fps || 24;
+  // Dimensions/fps default to the SOURCE video's real geometry (probed from
+  // source.mp4 / the first video in the project) so an author never has to guess
+  // — omitting width/height/fps yields correct portrait/landscape geometry, and a
+  // stale guess can't ship a landscape plan over a portrait clip. Explicit
+  // cinematic.json values still win. Falls back to 1920×1080/24 only when there's
+  // no probe-able video.
+  const srcDims = probeSourceDims(project);
+  const W = C.width || (srcDims && srcDims.width) || 1920,
+    H = C.height || (srcDims && srcDims.height) || 1080,
+    FPS = C.fps || (srcDims && srcDims.fps) || 24;
+  if (srcDims && (!C.width || !C.height || !C.fps))
+    console.error(
+      `[make-cinematic] geometry from source video: ${W}×${H} @ ${FPS}fps` +
+        `${C.width || C.height || C.fps ? " (some fields author-overridden)" : ""}`,
+    );
   const blocks = C.blocks || [];
   if (!blocks.length) die("blocks is empty");
 

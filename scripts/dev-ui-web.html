@@ -1650,6 +1650,7 @@
 Author and compile CINEMATIC captions for this project. This project directory is your current working directory; the repository root (containing the skills/ folder) is also available.
 - Read the workflow and schema in skills/embedded-captions/SKILL.md and the header of skills/embedded-captions/scripts/make-cinematic.cjs.
 - Author cinematic.json using the Cinematic "cream" DNA: group transcript.json's words into thought-blocks (2–5 words per line at clause boundaries), words verbatim in spoken order, at most one "hero": true line at the climax.
+- Do NOT set width/height/fps in cinematic.json — the compiler auto-detects them from source.mp4 (portrait vs landscape, real fps). Omit those fields so the geometry always matches the footage. Likewise size planes with percentage geometry so they adapt to either orientation.
 - Compile with absolute paths: node <repo>/skills/embedded-captions/scripts/make-cinematic.cjs <this-project-dir>, then node <repo>/skills/embedded-captions/scripts/make-composition.cjs <this-project-dir>. Fix errors and re-run until both succeed and plan.json + index.html exist.
 - Do NOT render the final MP4. Stop once plan.json and index.html exist.`;
       // shared teardown after a run (or reconnect) ends
