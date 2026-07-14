@@ -404,6 +404,29 @@ const CAPTION_MODELS = new Set([
   "large-v2",
   "large-v3",
 ]);
+// Compile the agent-authored cinematic.json → plan.json + index.html, as a
+// tracked job. The SERVER runs node here (child_process, no permission gate) —
+// the headless authoring agent cannot (`node` is denied under acceptEdits), so
+// compilation must live server-side. Runs make-cinematic then make-composition,
+// the documented two-step. Paths are repo-controlled (safeProjectPath + REPO_ROOT,
+// no spaces/metacharacters), so the joined shell command is safe.
+const MAKE_CINEMATIC = join(REPO_ROOT, "skills/embedded-captions/scripts/make-cinematic.cjs");
+const MAKE_COMPOSITION = join(REPO_ROOT, "skills/embedded-captions/scripts/make-composition.cjs");
+async function postCaptionsCompile(req, res) {
+  const b = await readBody(req);
+  const project = safeProjectPath(b.project);
+  if (!project) return send(res, 400, { ok: false, error: "unknown project" });
+  const abs = join(REPO_ROOT, project);
+  if (!existsSync(join(abs, "cinematic.json")))
+    return send(res, 400, { ok: false, error: "cinematic.json not found — author it first" });
+  const job = startJob({
+    kind: "compile",
+    project,
+    cmd: "bash",
+    args: ["-c", `node "${MAKE_CINEMATIC}" "${abs}" && node "${MAKE_COMPOSITION}" "${abs}"`],
+  });
+  send(res, 200, { ok: true, id: job.id });
+}
 async function postCaptionsRetranscribe(req, res) {
   const b = await readBody(req);
   const project = safeProjectPath(b.project);
@@ -508,6 +531,7 @@ const ROUTES = {
   "GET /api/captions": getCaptions,
   "POST /api/captions/approve": postCaptionsApprove,
   "POST /api/captions/retranscribe": postCaptionsRetranscribe,
+  "POST /api/captions/compile": postCaptionsCompile,
   "GET /api/source-videos": getSourceVideos,
   "POST /api/create-caption": postCreateCaption,
 };

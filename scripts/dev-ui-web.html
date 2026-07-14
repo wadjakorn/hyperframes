@@ -1601,11 +1601,13 @@
         const clock = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
         const what =
           run.phase === "author"
-            ? "Authoring &amp; compiling captions"
-            : run.model
-              ? `Transcribing “${run.model}” on the server`
-              : "Transcribing on the server";
-        el.innerHTML = `<span class="pulse"></span> ${what} · <span class="mono">${clock}</span> elapsed${run.phase !== "author" ? " — WhisperX runs on CPU and prints nothing until done, so this looks quiet (longer on the first run while the model downloads)" : ""}`;
+            ? "Authoring cinematic captions"
+            : run.phase === "compile"
+              ? "Compiling captions on the server"
+              : run.model
+                ? `Transcribing “${run.model}” on the server`
+                : "Transcribing on the server";
+        el.innerHTML = `<span class="pulse"></span> ${what} · <span class="mono">${clock}</span> elapsed${run.phase === "transcribe" ? " — WhisperX runs on CPU and prints nothing until done, so this looks quiet (longer on the first run while the model downloads)" : ""}`;
         el.classList.add("show");
       }
       // poll a server job until it stops running; emit each new lastLine.
@@ -1668,12 +1670,11 @@
         };
       }
       const AUTHOR_PROMPT = `A transcript already exists at transcript.json in this project — do NOT transcribe again.
-Author and compile CINEMATIC captions for this project. This project directory is your current working directory; the repository root (containing the skills/ folder) is also available.
+Author CINEMATIC captions for this project. This project directory is your current working directory; the repository root (containing the skills/ folder) is also available for reading the schema.
 - Read the workflow and schema in skills/embedded-captions/SKILL.md and the header of skills/embedded-captions/scripts/make-cinematic.cjs.
-- Author cinematic.json using the Cinematic "cream" DNA: group transcript.json's words into thought-blocks (2–5 words per line at clause boundaries), words verbatim in spoken order, at most one "hero": true line at the climax.
+- Write cinematic.json using the Cinematic "cream" DNA: group transcript.json's words into thought-blocks (2–5 words per line at clause boundaries), words verbatim in spoken order, at most one "hero": true line at the climax.
 - Do NOT set width/height/fps in cinematic.json — the compiler auto-detects them from source.mp4 (portrait vs landscape, real fps). Omit those fields so the geometry always matches the footage. Likewise size planes with percentage geometry so they adapt to either orientation.
-- Compile with absolute paths: node <repo>/skills/embedded-captions/scripts/make-cinematic.cjs <this-project-dir>, then node <repo>/skills/embedded-captions/scripts/make-composition.cjs <this-project-dir>. Fix errors and re-run until both succeed and plan.json + index.html exist.
-- Do NOT render the final MP4. Stop once plan.json and index.html exist.`;
+- Do NOT run any compile or node commands, and do NOT render. The server compiles cinematic.json into plan.json + index.html after you finish — your only deliverable is a well-formed cinematic.json. Stop as soon as it is written.`;
       // shared teardown after a run (or reconnect) ends
       async function finishGenRun(path, run) {
         run.running = false;
@@ -1714,13 +1715,36 @@ Author and compile CINEMATIC captions for this project. This project directory i
           push("result", "Transcript ready. Authoring cinematic captions…");
           run.phase = "author";
           updateGenStatus();
-          // ── phase 2: author + compile (agent, repo access) ──
-          await streamAgent(path, AUTHOR_PROMPT, push, { repoAccess: true });
+          // ── phase 2: agent authors cinematic.json, then SERVER compiles ──
+          await authorThenCompile(path, run, push);
         } catch (e) {
           push("error", e.message);
         } finally {
           await finishGenRun(path, run);
         }
+      }
+      // Phase 2, split so the headless agent never runs `node`: the agent AUTHORS
+      // cinematic.json (a file edit — allowed under acceptEdits), then the server
+      // COMPILES it into plan.json + index.html (a tracked job; the server can run
+      // node, the permission-gated agent can't). Pass agentJob to resume an
+      // already-running author stream after a page reload instead of starting one.
+      async function authorThenCompile(path, run, push, agentJob) {
+        if (agentJob) {
+          const ok = await pollJobDone(agentJob.id, (line) => push("tool", line));
+          if (!ok) throw new Error("Authoring failed — check the log under Setup & advanced.");
+        } else {
+          await streamAgent(path, AUTHOR_PROMPT, push, { repoAccess: true });
+        }
+        run.phase = "compile";
+        updateGenStatus();
+        push("system", "Compiling captions on the server (plan.json + index.html)…");
+        const c = await api("/api/captions/compile", POST({ project: path }));
+        const ok = await pollJobDone(c.id, (line) => push("tool", line));
+        if (!ok)
+          throw new Error(
+            "Compile failed — the agent may not have written a valid cinematic.json. See the log under Setup & advanced.",
+          );
+        push("result", "Captions compiled. Opening the review gate…");
       }
       // On page load the client buffer is gone, but the transcribe/agent jobs keep
       // running server-side. Reconnect to any in-progress caption job and resume.
@@ -1732,7 +1756,9 @@ Author and compile CINEMATIC captions for this project. This project directory i
           return;
         }
         const live = jobs.filter(
-          (j) => j.state === "running" && (j.kind === "transcribe" || j.kind === "agent"),
+          (j) =>
+            j.state === "running" &&
+            (j.kind === "transcribe" || j.kind === "agent" || j.kind === "compile"),
         );
         const byProject = new Map();
         for (const j of live) if (!byProject.has(j.project)) byProject.set(j.project, j);
@@ -1742,7 +1768,8 @@ Author and compile CINEMATIC captions for this project. This project directory i
             running: true,
             lines: [],
             model: "",
-            phase: job.kind === "agent" ? "author" : "transcribe",
+            phase:
+              job.kind === "compile" ? "compile" : job.kind === "agent" ? "author" : "transcribe",
             startedAt: job.startedAt || Date.now(),
           };
           state.genRuns[path] = run;
@@ -1758,12 +1785,12 @@ Author and compile CINEMATIC captions for this project. This project directory i
       async function resumeCaptionJob(path, job) {
         const run = state.genRuns[path];
         const push = makeGenPush(path, run);
-        push(
-          "system",
-          job.kind === "agent"
-            ? "Reconnected — authoring & compiling is still running on the server…"
-            : "Reconnected — transcription is still running on the server…",
-        );
+        const msg = {
+          transcribe: "Reconnected — transcription is still running on the server…",
+          agent: "Reconnected — authoring is still running on the server…",
+          compile: "Reconnected — compiling captions on the server…",
+        };
+        push("system", msg[job.kind] || "Reconnected — a caption job is still running…");
         updateGenStatus();
         try {
           if (job.kind === "transcribe") {
@@ -1772,10 +1799,17 @@ Author and compile CINEMATIC captions for this project. This project directory i
             push("result", "Transcript ready. Authoring cinematic captions…");
             run.phase = "author";
             updateGenStatus();
-            await streamAgent(path, AUTHOR_PROMPT, push, { repoAccess: true });
+            await authorThenCompile(path, run, push);
+          } else if (job.kind === "agent") {
+            // resume the in-flight author stream, then the server compiles
+            await authorThenCompile(path, run, push, job);
           } else {
+            // a compile job was already in flight — just poll it to completion
+            run.phase = "compile";
+            updateGenStatus();
             const ok = await pollJobDone(job.id, (line) => push("tool", line));
-            push(ok ? "result" : "error", ok ? "Authoring finished." : "Authoring failed.");
+            if (!ok) throw new Error("Compile failed — check the log under Setup & advanced.");
+            push("result", "Captions compiled. Opening the review gate…");
           }
         } catch (e) {
           push("error", e.message);
