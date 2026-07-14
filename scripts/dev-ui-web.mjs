@@ -443,6 +443,10 @@ async function postCaptionsRetranscribe(req, res) {
     model,
   ];
   if (language) args.push(language);
+  // this endpoint is only hit by an explicit user "Transcribe / Re-transcribe" —
+  // always force a fresh run so a changed model/language actually takes effect
+  // (transcribe.cjs otherwise skips when a valid transcript.json already exists).
+  args.push("--force");
   const job = startJob({ kind: "transcribe", project, cmd: "node", args });
   send(res, 200, { ok: true, id: job.id });
 }

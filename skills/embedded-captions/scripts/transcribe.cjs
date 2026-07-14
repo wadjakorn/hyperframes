@@ -298,17 +298,24 @@ function audibleEnd(audio) {
 }
 
 function main() {
-  const project = path.resolve(process.argv[2] || "");
-  if (!process.argv[2]) {
-    console.error("usage: transcribe.cjs <project-dir> [model] [language]");
+  // `--force` re-transcribes even when a valid transcript.json already exists —
+  // needed when the caller changes model/language and wants a fresh run (the
+  // "already normalized, skipping" shortcut below otherwise ignores both). Flags
+  // are filtered out so [model] / [language] stay positional in any order.
+  const argv = process.argv.slice(2);
+  const force = argv.includes("--force") || process.env.TRANSCRIBE_FORCE === "1";
+  const positional = argv.filter((a) => !a.startsWith("--"));
+  const project = path.resolve(positional[0] || "");
+  if (!positional[0]) {
+    console.error("usage: transcribe.cjs <project-dir> [model] [language] [--force]");
     process.exit(1);
   }
   // Default = multilingual `small`, NOT `small.en`. Per media-use: ".en models
   // mistranslate non-English and mis-handle accented speech; default to small (auto-detects
   // language)." We hardcoded small.en before — it hallucinated a wrong transcript on an
   // accented speaker. Pass `small.en` only for known-clean-English; tough accents → a larger model.
-  const model = process.argv[3] || process.env.WHISPER_MODEL || "small";
-  const language = process.argv[4] || process.env.WHISPER_LANG || "";
+  const model = positional[1] || process.env.WHISPER_MODEL || "small";
+  const language = positional[2] || process.env.WHISPER_LANG || "";
   const out = path.join(project, "transcript.json");
 
   // Per-project glossary + fix map. Reused every run; a stub is written the first
@@ -338,10 +345,14 @@ function main() {
           Number.isFinite(w.end) &&
           w.end < 36000, // ms-offset formats blow past any sane seconds value
       );
-    if (wordShaped && d.language_code) {
-      console.log("[transcribe] already normalized, skipping");
+    if (wordShaped && d.language_code && !force) {
+      console.log("[transcribe] already normalized, skipping (pass --force to re-transcribe)");
       return;
     }
+    if (wordShaped && d.language_code && force)
+      console.log(
+        `[transcribe] --force: re-transcribing (model=${model}, language=${language || "auto"}) — replacing existing transcript`,
+      );
     if (d && !wordShaped) {
       console.log(
         "[transcribe] existing transcript.json is NOT word-level (init stub / segment format) — regenerating",
