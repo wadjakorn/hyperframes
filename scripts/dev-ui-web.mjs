@@ -18,7 +18,16 @@ import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { mkdirSync, createWriteStream, writeFileSync, existsSync, readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  createWriteStream,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  copyFileSync,
+} from "node:fs";
 import { readCaptions, approveCaptions, recompileComposition } from "./dev-ui-captions.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -398,6 +407,72 @@ async function postCaptionsRetranscribe(req, res) {
   send(res, 200, { ok: true, id: job.id });
 }
 
+// ── caption-from-video: seed a new project with an existing clip ──────────────
+const VIDEO_RE = /\.(mp4|mov|webm)$/i;
+// scan projects/*/{.,assets,renders} for reusable source clips
+function getSourceVideos(_req, res) {
+  const out = [];
+  const root = join(REPO_ROOT, "projects");
+  try {
+    for (const proj of readdirSync(root)) {
+      const pdir = join(root, proj);
+      let isDir = false;
+      try {
+        isDir = statSync(pdir).isDirectory();
+      } catch {
+        /* skip */
+      }
+      if (!isDir) continue;
+      for (const sub of ["", "assets", "renders"]) {
+        const dir = sub ? join(pdir, sub) : pdir;
+        if (!existsSync(dir)) continue;
+        for (const f of readdirSync(dir)) {
+          if (!VIDEO_RE.test(f)) continue;
+          const rel = ["projects", proj, sub, f].filter(Boolean).join("/");
+          let size = 0;
+          try {
+            size = statSync(join(dir, f)).size;
+          } catch {
+            /* best-effort */
+          }
+          out.push({ path: rel, project: proj, name: f, size });
+        }
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  send(res, 200, { videos: out });
+}
+
+// minimal valid composition shown until captions are generated
+const CAPTION_PLACEHOLDER = `<!doctype html><html lang="en"><head><meta charset="utf-8" />
+<style>body{margin:0;background:#0b0c0f;color:#828a97;font:500 19px/1.5 system-ui;display:grid;place-items:center;height:100vh;text-align:center;padding:24px}</style></head>
+<body><div class="clip" data-start="0" data-end="1">Captions not generated yet.<br />Use “Generate captions” to caption this video.</div></body></html>`;
+
+// copy a source clip into a fresh project as source.mp4 (+ placeholder index.html)
+async function postCreateCaption(req, res) {
+  const b = await readBody(req);
+  const name = cleanName(b.name);
+  if (!name) return send(res, 400, { ok: false, error: "name: letters, digits, - _ only" });
+  const src = String(b.source || "").replace(/\\/g, "/");
+  if (!/^projects\/[\w./-]+$/.test(src) || src.includes("..") || !VIDEO_RE.test(src))
+    return send(res, 400, { ok: false, error: "invalid source video" });
+  const srcAbs = join(REPO_ROOT, src);
+  if (!existsSync(srcAbs)) return send(res, 400, { ok: false, error: "source video not found" });
+  const dir = join(REPO_ROOT, "projects", name);
+  if (existsSync(dir))
+    return send(res, 400, { ok: false, error: `projects/${name} already exists` });
+  try {
+    mkdirSync(dir, { recursive: true });
+    copyFileSync(srcAbs, join(dir, "source.mp4"));
+    writeFileSync(join(dir, "index.html"), CAPTION_PLACEHOLDER);
+    send(res, 200, { ok: true, project: `projects/${name}` });
+  } catch (e) {
+    send(res, 500, { ok: false, error: errMessage(e) });
+  }
+}
+
 const ROUTES = {
   "GET /": html,
   "GET /index.html": html,
@@ -418,6 +493,8 @@ const ROUTES = {
   "GET /api/captions": getCaptions,
   "POST /api/captions/approve": postCaptionsApprove,
   "POST /api/captions/retranscribe": postCaptionsRetranscribe,
+  "GET /api/source-videos": getSourceVideos,
+  "POST /api/create-caption": postCreateCaption,
 };
 
 const server = createServer(async (req, res) => {

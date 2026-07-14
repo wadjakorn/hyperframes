@@ -26,19 +26,24 @@ const MAKE_COMPOSITION = join(REPO_ROOT, "skills/embedded-captions/scripts/make-
 export const approvedMarker = (dir) => join(dir, ".captions-approved");
 const planPathOf = (dir) => join(dir, "plan.json");
 const transcriptPathOf = (dir) => join(dir, "transcript.json");
+const sourcePathOf = (dir) => join(dir, "source.mp4");
 
 // A gate-able caption project = Cinematic (has plan.json) + a transcript.json.
 export function isCaptionProject(dir) {
   return existsSync(planPathOf(dir)) && existsSync(transcriptPathOf(dir));
 }
+// A caption project still awaiting generation carries a source.mp4 but no plan yet.
+export const hasSourceVideo = (dir) => existsSync(sourcePathOf(dir));
 
 // Read the displayed captions (plan groups) + engine/granularity for the UI.
 // Only `ti`-anchored words are editable (the sync into transcript.json is
 // unambiguous); words without a ti are shown read-only.
 export function readCaptions(dir) {
+  const hasSource = hasSourceVideo(dir);
   if (!isCaptionProject(dir))
     return {
       isCaptionProject: false,
+      hasSource,
       approved: false,
       engine: null,
       granularity: null,
@@ -59,6 +64,7 @@ export function readCaptions(dir) {
   }));
   return {
     isCaptionProject: true,
+    hasSource,
     approved: existsSync(approvedMarker(dir)),
     engine: tr.engine ?? null,
     // every pipeline transcript is flat word-level; a genuine word[] ⇒ "word".

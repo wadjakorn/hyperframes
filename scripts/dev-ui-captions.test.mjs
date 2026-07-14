@@ -69,6 +69,16 @@ test("isCaptionProject: true only with both plan.json and transcript.json", () =
   expect(isCaptionProject(bare)).toBe(false);
 });
 
+test("readCaptions: hasSource reflects a source.mp4 awaiting caption generation", () => {
+  const seeded = mkdtempSync(join(tmpdir(), "seed-"));
+  writeFileSync(join(seeded, "source.mp4"), "fake");
+  writeFileSync(join(seeded, "index.html"), "<html></html>");
+  const r = readCaptions(seeded);
+  expect(r.isCaptionProject).toBe(false); // no plan.json yet
+  expect(r.hasSource).toBe(true); // but a video is present → "generate" stage
+  expect(readCaptions(fixture()).hasSource).toBe(false); // fixture has no source.mp4
+});
+
 test("readCaptions surfaces engine, granularity, and ti-anchored words", () => {
   const r = readCaptions(fixture());
   expect(r.isCaptionProject).toBe(true);

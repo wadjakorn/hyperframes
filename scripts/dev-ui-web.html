@@ -183,6 +183,11 @@
         padding: 2px 6px;
         flex: none;
       }
+      .vid .badge.gen {
+        color: var(--iris);
+        background: var(--iris-soft);
+        border-color: var(--iris-line);
+      }
       .rail .foot {
         margin-top: 6px;
         padding-top: 10px;
@@ -614,6 +619,29 @@
         gap: 10px;
         align-items: center;
         margin-top: 16px;
+      }
+      .gen-row {
+        display: flex;
+        gap: 14px;
+        align-items: flex-end;
+        flex-wrap: wrap;
+      }
+      .gen-row label.hint {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .gen-row select {
+        min-width: 240px;
+      }
+      .cards.cards-3 {
+        max-width: 900px;
+        grid-template-columns: 1fr 1fr 1fr;
+      }
+      @media (max-width: 720px) {
+        .cards.cards-3 {
+          grid-template-columns: 1fr;
+        }
       }
       .fails {
         margin-top: 12px;
@@ -1148,11 +1176,13 @@
           ? vids
               .map((p) => {
                 const on = state.selected === p.path;
-                const cap = state.captions[p.path];
+                const stage = captionStage(state.captions[p.path]);
                 const badge =
-                  cap && cap.isCaptionProject && !cap.approved
+                  stage === "review"
                     ? `<span class="badge">review</span>`
-                    : "";
+                    : stage === "generate"
+                      ? `<span class="badge gen">caption</span>`
+                      : "";
                 return `<button class="vid ${isUp(p.path) ? "up" : ""} ${on ? "on" : ""}" data-path="${esc(p.path)}">
           <span class="dot"></span>
           <span class="vname">${esc(p.name)}</span>
@@ -1212,12 +1242,17 @@
         c.innerHTML = `
     <div class="door">
       <h1>What do you want to do?</h1>
-      <p class="lede">Make a brand-new video from scratch, or open one you’ve already started to keep editing it.</p>
-      <div class="cards">
+      <p class="lede">Make a brand-new video, add captions to a video you have, or open one you’ve already started.</p>
+      <div class="cards cards-3">
         <button class="startcard" id="doorCreate">
           <span class="ic">✦</span>
           <h3>Make a new video</h3>
           <p>Start blank or from a template, pick a size, and open its workspace.</p>
+        </button>
+        <button class="startcard" id="doorCaption">
+          <span class="ic">￭</span>
+          <h3>Caption a video</h3>
+          <p>Pick a video you already have and add cinematic captions — transcribe, review, export.</p>
         </button>
         <button class="startcard alt" id="doorEdit" ${hasVideos ? "" : "disabled"}>
           <span class="ic">✎</span>
@@ -1227,12 +1262,85 @@
       </div>
     </div>`;
         $("#doorCreate").onclick = openCreateFlow;
+        $("#doorCaption").onclick = openCaptionFlow;
         const edit = $("#doorEdit");
         if (hasVideos)
           edit.onclick = () => {
             toast("Pick a video from the left rail →");
             $("#rail .vids").scrollIntoView({ behavior: "smooth" });
           };
+      }
+
+      // ── caption-a-video flow: pick a source clip → seed a new project ─────
+      const fmtBytes = (n) =>
+        n > 1e6 ? (n / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1e3)) + " KB";
+      async function openCaptionFlow() {
+        state.selected = null;
+        const c = $("#canvas");
+        c.innerHTML = `<div class="panel" style="max-width:560px"><h2>Caption a video</h2><p class="sub">Loading your videos…</p></div>`;
+        let videos = [];
+        try {
+          videos = (await api("/api/source-videos")).videos || [];
+        } catch (e) {
+          toast(e.message, true);
+        }
+        const opts = videos
+          .map(
+            (v) =>
+              `<option value="${esc(v.path)}">${esc(v.project)} / ${esc(v.name)} · ${fmtBytes(v.size)}</option>`,
+          )
+          .join("");
+        c.innerHTML = `
+    <div class="panel" style="max-width:560px">
+      <h2>Caption a video</h2>
+      <p class="sub">Copies the clip into a new project as <span class="mono">source.mp4</span>, then you generate cinematic captions.</p>
+      ${
+        videos.length
+          ? `
+      <div class="formrow">
+        <label for="capSource">Source video</label>
+        <select id="capSource" class="mono">${opts}</select>
+      </div>
+      <div class="formrow">
+        <label for="capName">New project name</label>
+        <input id="capName" class="mono" placeholder="ep1-captions" autocomplete="off" />
+      </div>
+      <div class="formactions">
+        <button class="btn primary" id="capCreate">Create &amp; open</button>
+        <button class="btn ghost" id="capCancel">Cancel</button>
+      </div>`
+          : `<div class="empty">No videos found in your projects. Create a video first, or add an MP4 under a project’s <span class="mono">assets/</span>.</div>
+      <div class="formactions"><button class="btn ghost" id="capCancel">Back</button></div>`
+      }
+    </div>`;
+        $("#capCancel").onclick = () => renderCanvas();
+        if (videos.length) {
+          $("#capName").focus();
+          $("#capCreate").onclick = doCreateCaption;
+          $("#capName").addEventListener("keydown", (e) => {
+            if (e.key === "Enter") doCreateCaption();
+          });
+        }
+      }
+      async function doCreateCaption() {
+        const name = $("#capName").value.trim();
+        if (!/^[a-zA-Z0-9_-]+$/.test(name))
+          return toast("Name: letters, digits, - and _ only", true);
+        const source = $("#capSource").value;
+        const btn = $("#capCreate");
+        btn.disabled = true;
+        btn.textContent = "Copying…";
+        try {
+          const r = await api("/api/create-caption", POST({ name, source }));
+          await loadProjects();
+          await loadCaptions(r.project);
+          selectVideo(r.project);
+          toast("Created " + name + " — now generate captions");
+        } catch (e) {
+          toast(e.message, true);
+          btn.disabled = false;
+          btn.textContent = "Create & open";
+        }
       }
 
       // ── create flow ──────────────────────────────────────────────────
@@ -1340,9 +1448,9 @@
     </div>`;
 
         $("#wsExport").onclick = () => exportMp4(path);
-        // lock export up-front if we already know captions need review (no flash)
+        // lock export up-front if we already know captions are pending (no flash)
         const cap = state.captions[path];
-        if (cap && cap.isCaptionProject && !cap.approved) lockExport(true);
+        if (cap && captionStage(cap) !== "none") lockExport(true);
         renderPreview(path);
         renderAgent($("#wsAgent"), path);
         refreshCaptionGate(path);
@@ -1379,17 +1487,95 @@
       async function loadCaptionFlags() {
         await Promise.all(userProjects().map((p) => loadCaptions(p.path)));
       }
+      // three caption stages: seeded-with-video (generate) → has captions (review)
+      // → approved (nothing). Export stays locked through the first two.
+      function captionStage(cap) {
+        if (!cap) return "none";
+        if (cap.isCaptionProject) return cap.approved ? "none" : "review";
+        return cap.hasSource ? "generate" : "none";
+      }
       // draw (or clear) the gate for a project and set the export lock
       async function refreshCaptionGate(path) {
         let cap = state.captions[path];
         if (!cap) cap = await loadCaptions(path);
         if (state.selected !== path) return;
-        const needsReview = cap.isCaptionProject && !cap.approved;
-        lockExport(needsReview);
+        const stage = captionStage(cap);
+        lockExport(stage === "review" || stage === "generate");
         const box = $("#wsGate");
         if (!box) return;
-        if (needsReview) renderCaptionGate(box, path, cap);
+        if (stage === "review") renderCaptionGate(box, path, cap);
+        else if (stage === "generate") renderGenerateCard(box, path);
         else box.innerHTML = "";
+      }
+      // stage 1: a video-seeded project with no captions yet → agent kickoff
+      function renderGenerateCard(box, path) {
+        box.innerHTML = `
+    <div class="gate">
+      <div class="cap-head"><h3>Generate captions</h3><span class="engine mono">Cinematic</span></div>
+      <p class="cap-note">This video has no captions yet. Transcribe it and build cinematic captions with the agent — it runs locally (WhisperX; the first run may download a model). When it finishes you’ll review the words here before Export unlocks.</p>
+      <div class="gen-row">
+        <label class="hint">Transcription model
+          <select id="genEngine" class="mono">
+            <option value="small">small — fast (English)</option>
+            <option value="medium">medium — better for Thai / accented speech</option>
+          </select>
+        </label>
+        <button class="btn primary" id="genRun">Transcribe &amp; build captions</button>
+      </div>
+      <div class="log" id="genLog"></div>
+    </div>`;
+        $("#genRun").onclick = () => generateCaptions(path);
+      }
+      async function generateCaptions(path) {
+        const engine = $("#genEngine")?.value || "small";
+        const out = $("#genLog");
+        out.classList.add("show");
+        out.innerHTML = "";
+        const btn = $("#genRun");
+        btn.disabled = true;
+        btn.textContent = "Working… this can take a few minutes";
+        state.agentBusy = true;
+        const prompt = `Using the /embedded-captions skill, add captions to this project's talking-head video at source.mp4.
+- Use the CINEMATIC identity "cream" (pure embed → produces plan.json). Do NOT use Standard or Theme mode.
+- Transcribe locally with WhisperX model "${engine}" and auto-detect the spoken language.
+- Produce transcript.json, then author cinematic.json and compile via make-cinematic.cjs and make-composition.cjs so that plan.json and index.html exist.
+- STOP after the captions compile — do NOT render the final MP4. I will review the caption timing in the console and export from there.`;
+        try {
+          const r = await fetch("/api/agent", POST({ project: path, prompt }));
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            throw new Error(j.error || "HTTP " + r.status);
+          }
+          const reader = r.body.getReader(),
+            dec = new TextDecoder();
+          let buf = "";
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let i;
+            while ((i = buf.indexOf("\n\n")) >= 0) {
+              const chunk = buf.slice(0, i);
+              buf = buf.slice(i + 2);
+              const m = chunk.match(/^data: (.*)$/s);
+              if (!m) continue;
+              try {
+                const e = JSON.parse(m[1]);
+                appendLine(out, e.t === "assistant" && /^→/.test(e.text) ? "tool" : e.t, e.text);
+              } catch {}
+            }
+          }
+        } catch (e) {
+          appendLine(out, "error", e.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Transcribe & build captions";
+          state.agentBusy = false;
+          await loadCaptions(path);
+          renderRail();
+          refreshCaptionGate(path); // captions now exist → the review gate takes over
+          reloadPreview(path);
+        }
       }
       function renderCaptionGate(box, path, cap) {
         const cues = (cap.groups || [])
