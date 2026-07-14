@@ -37,6 +37,41 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
+
+// ── Load .env from the repo root ──────────────────────────────────────────────
+// So transcription API keys (OPENAI_API_KEY / OPENROUTER_API_KEY) — and any other
+// env the server + its child jobs need — can live in a gitignored .env instead of
+// the launch command. Existing env vars win (never override). Same tolerant parser
+// as packages/cli/src/cli.ts: skips blanks/#comments, allows `export FOO=bar` and
+// quoted values, strips unquoted inline comments. Runs before any key is read.
+function loadDotenv() {
+  let envContent;
+  try {
+    envContent = readFileSync(join(REPO_ROOT, ".env"), "utf8");
+  } catch {
+    return; // no .env — env vars may be set another way
+  }
+  for (const rawLine of envContent.split("\n")) {
+    let line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("export ")) line = line.slice(7).trim();
+    const eqIdx = line.indexOf("=");
+    if (eqIdx < 1) continue;
+    const key = line.slice(0, eqIdx).trim();
+    let val = line.slice(eqIdx + 1).trim();
+    if (val.startsWith('"') || val.startsWith("'")) {
+      const quote = val.charAt(0);
+      const end = val.indexOf(quote, 1);
+      val = end > 0 ? val.slice(1, end) : val.slice(1);
+    } else {
+      const commentMatch = val.match(/\s+#/);
+      if (commentMatch?.index !== undefined) val = val.slice(0, commentMatch.index).trim();
+    }
+    if (key && !(key in process.env)) process.env[key] = val;
+  }
+}
+loadDotenv();
+
 const SCRIPT = join(__dirname, "dev-ui.sh");
 const CLI = join(REPO_ROOT, "packages/cli/dist/cli.js");
 const WEB_PORT = Number(process.env.WEB_PORT || 4173);
