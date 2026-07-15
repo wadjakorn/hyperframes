@@ -117,6 +117,12 @@ Flex-direction: column with multiple `.cap` children looks tidy in source. At ru
 
 Use `position: absolute` for each `.cap` inside the plane so hidden ones don't occupy layout. Both shipped templates do this.
 
+### You animate a multi-line highlight with a single clip-path/mask wipe.
+
+For a karaoke / active-word highlight you stack a bright copy over a dim one and reveal it with one animated `clip-path: inset(...)` (or mask, or `background-position`) sweeping left-to-right. On a **one-line** caption it looks right. On a **two-line** caption it fills both lines' left halves at once — a horizontal wipe reveals a wrapped block **column-wise**, not in reading order. It reads as "both lines lighting together," which is exactly the bug.
+
+Highlight **per token**: wrap each word in its own `<span>` and snap each dim→bright in DOM order (color tween, not a mask). Reading order — including the wrap to line 2 — then follows the text for free. Full spec: [karaoke.md](karaoke.md).
+
 ### You start the timeline at t=0.
 
 Caption at exactly t=0 feels like it was there before the video started. Offset 0.1-0.3s (hyperframes motion-principles.md agrees). Same for the very last caption — let it exit before the video fades.

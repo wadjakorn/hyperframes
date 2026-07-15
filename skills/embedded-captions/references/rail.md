@@ -50,6 +50,10 @@ phrase), give it an **inline** lift on the rail — accent colour and/or +weight
 karaoke-style active-word pop (≤1.1× scale) as it's spoken. Keep it inline; it does **not**
 leave the rail. Anything that wants to leave the rail is an `embed`, not an emphasis.
 
+Emphasis is 1–2 punch words. Lighting **every** word in sequence (full karaoke) is a different,
+louder aesthetic — opt-in for social / Reels identities only, and implemented per-token, never
+as a clip-path wipe: [karaoke.md](karaoke.md).
+
 ## What the rail never does
 
 - Never goes behind the subject (that's embed).
