@@ -1,0 +1,10 @@
+# Secrets — never commit
+.env.local
+
+# Scaffolded caption projects (videos, renders, keys live here)
+*/assets/
+*/renders/
+*/captions.srt
+*/index.html
+*/transcript.json
+*/.build-state.json
