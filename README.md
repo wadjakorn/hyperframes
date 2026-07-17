@@ -293,6 +293,12 @@ Full documentation: [hyperframes.heygen.com/introduction](https://hyperframes.he
 | [`@hyperframes/shader-transitions`](packages/shader-transitions) | WebGL shader transitions for compositions                         |
 | [`@hyperframes/aws-lambda`](packages/aws-lambda)                 | AWS Lambda SDK and deployment surface for distributed renders     |
 
+## Tools
+
+| Tool                                     | Description                                                                                   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [`caption-kit`](tools/caption-kit)       | Karaoke-caption pipeline for talking-head / screen-capture videos: transcribe → proofread `.srt` → footage-derived layout → render, with verification guards |
+
 ## Community
 
 HyperFrames is used in production at [HeyGen](https://www.heygen.com), with community examples from teams like [tldraw](https://tldraw.com), [TanStack](https://tanstack.com), and others in [ADOPTERS.md](ADOPTERS.md). Open a PR if your team is using HyperFrames.
